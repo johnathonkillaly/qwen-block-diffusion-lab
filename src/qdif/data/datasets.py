@@ -12,22 +12,40 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterator, Sequence
 
-import torch
+import numpy as np
 
 from .dev_corpus import DEV_TEXTS
 
 
+def encode(tokenizer, text: str) -> np.ndarray:
+    """Tokenize to a numpy int64 array, for any of the tokenizer flavours in play.
+
+    The torch backend uses a Hugging Face fast tokenizer; the MLX backend gets an
+    `mlx_lm` `TokenizerWrapper`, which is not callable and takes different kwargs.
+    Both backends must produce *identical* token ids, or a v0.1/v0.2 comparison is
+    comparing datasets rather than models -- hence one shared entry point.
+    """
+    try:
+        ids = tokenizer.encode(text, add_special_tokens=False)
+    except TypeError:
+        ids = tokenizer.encode(text)
+    if hasattr(ids, "ids"):  # raw `tokenizers` Encoding
+        ids = ids.ids
+    return np.asarray(ids, dtype=np.int64).reshape(-1)
+
+
+def decode(tokenizer, ids) -> str:
+    return tokenizer.decode([int(i) for i in np.asarray(ids).reshape(-1)])
+
+
 @dataclass
 class CanvasExample:
-    prefix_ids: torch.Tensor  # [P] int64
-    canvas_ids: torch.Tensor  # [C] int64
+    prefix_ids: np.ndarray  # [P] int64
+    canvas_ids: np.ndarray  # [C] int64
     text: str = ""
 
     def decoded(self, tokenizer) -> tuple[str, str]:
-        return (
-            tokenizer.decode(self.prefix_ids, skip_special_tokens=False),
-            tokenizer.decode(self.canvas_ids, skip_special_tokens=False),
-        )
+        return decode(tokenizer, self.prefix_ids), decode(tokenizer, self.canvas_ids)
 
 
 class CanvasDataset:
@@ -52,14 +70,14 @@ class CanvasDataset:
 
         self.examples: list[CanvasExample] = []
         for text in texts:
-            ids = tokenizer(text, add_special_tokens=False, return_tensors="pt")["input_ids"][0]
+            ids = encode(tokenizer, text)
             for start in range(0, max(len(ids) - window + 1, 0), stride):
                 chunk = ids[start : start + window]
                 self.examples.append(
                     CanvasExample(
-                        prefix_ids=chunk[:prefix_length].clone(),
-                        canvas_ids=chunk[prefix_length:].clone(),
-                        text=tokenizer.decode(chunk),
+                        prefix_ids=chunk[:prefix_length].copy(),
+                        canvas_ids=chunk[prefix_length:].copy(),
+                        text=decode(tokenizer, chunk),
                     )
                 )
                 if max_examples and len(self.examples) >= max_examples:

@@ -551,16 +551,22 @@ def cmd_probe_bidir(args) -> int:
     return 1
 
 
+def _trainer_for(cfg):
+    """Dispatch to the backend named in the config. No silent fallback."""
+    if cfg.training.backend == "mlx":
+        from .mlx_backend.trainer import train
+
+        return train
+    if cfg.training.backend == "torch":
+        from .training.torch_trainer import train
+
+        return train
+    raise ValueError(f"unknown training.backend {cfg.training.backend!r}; expected mlx or torch")
+
+
 def cmd_train(args) -> int:
     cfg = _load_cfg(args)
-    if cfg.training.backend == "mlx":
-        from .training.mlx_trainer import NOT_IMPLEMENTED_MESSAGE
-
-        _echo(NOT_IMPLEMENTED_MESSAGE)
-        return 2
-    from .training.torch_trainer import train
-
-    summary = train(cfg, echo=_echo, fixed_batch=args.fixed_batch)
+    summary = _trainer_for(cfg)(cfg, echo=_echo, fixed_batch=args.fixed_batch)
     _rule("summary")
     _echo(json.dumps(summary, indent=2, default=str))
     return 0
@@ -582,12 +588,14 @@ def cmd_overfit(args) -> int:
     cfg.diffusion.t_max = args.t_max
     cfg.data.max_examples = max(cfg.training.batch_size, 4)
 
-    from .training.torch_trainer import train
-
     _rule("overfit one batch")
-    _echo(f"  steps {cfg.training.max_steps} | batch {cfg.training.batch_size} | "
-          f"canvas {cfg.diffusion.canvas_length} | t in [0, {cfg.diffusion.t_max}]")
-    summary = train(cfg, echo=_echo, fixed_batch=True)
+    _echo(f"  backend {cfg.training.backend} | steps {cfg.training.max_steps} | "
+          f"batch {cfg.training.batch_size} | canvas {cfg.diffusion.canvas_length} | "
+          f"t in [{cfg.diffusion.t_min}, {cfg.diffusion.t_max}]")
+    if cfg.training.backend == "mlx":
+        b = cfg.bidirectional_deltanet
+        _echo(f"  bidirectional DeltaNet: {b.enabled} (fusion {b.fusion})")
+    summary = _trainer_for(cfg)(cfg, echo=_echo, fixed_batch=True)
 
     first, final = summary["first_loss"], summary["final_loss"]
     acc = summary["final_identity_accuracy"] or 0.0
@@ -920,6 +928,73 @@ def cmd_smoke_bidir(args) -> int:
     return 0 if all_pass else 1
 
 
+def cmd_compare_fusion(args) -> int:
+    """Untrained loss per fusion strategy, plus the gate sweep that de-confounds it."""
+    from .mlx_backend.build import build_mlx_setup
+    from .mlx_backend.fusion_eval import compare_fusions, gate_sweep
+
+    cfg = _load_cfg(args)
+    if cfg.training.backend != "mlx":
+        _echo("compare-fusion requires training.backend: mlx")
+        return 1
+    setup = build_mlx_setup(cfg, echo=_echo)
+
+    levels = tuple(args.noise_levels)
+    res = compare_fusions(setup, cfg, noise_levels=levels, num_batches=args.batches)
+    _rule("untrained diffusion loss by fusion strategy")
+    _echo(f"  {res['num_batches']} batches of {res['batch_size']}, canvas "
+          f"{res['canvas_length']}, gate_init {res['gate_init']}, NO training")
+    header = "  " + f"{'condition':<18}" + "".join(f"{f't={t}':>12}" for t in levels)
+    _echo(header)
+    baseline = res["results"]["A_causal"]
+    for name, r in res["results"].items():
+        row = f"  {name:<18}" + "".join(f"{r[t]['loss']:>12.4f}" for t in levels)
+        _echo(row)
+    _echo("")
+    _echo("  delta vs A_causal (negative = fusion helps the untrained model):")
+    for name, r in res["results"].items():
+        if name == "A_causal":
+            continue
+        row = f"  {name:<18}" + "".join(
+            f"{r[t]['loss'] - baseline[t]['loss']:>+12.4f}" for t in levels
+        )
+        _echo(row)
+
+    sweep = gate_sweep(setup, cfg, t_val=args.gate_sweep_t, num_batches=args.batches)
+    _rule(f"scalar-gate sweep at t={sweep['t']}  (g=1 is causal, g=0.5 is mean, g=0 is reverse-only)")
+    _echo(f"  {'g':>6}{'loss':>12}{'delta vs g=1':>16}")
+    base_g = sweep["gates"][1.0]["loss"]
+    for g, r in sweep["gates"].items():
+        _echo(f"  {g:>6.2f}{r['loss']:>12.4f}{r['loss'] - base_g:>+16.4f}")
+    from .mlx_backend.fusion_eval import control_sweep
+
+    ctrl = control_sweep(setup, cfg, t_val=args.gate_sweep_t, num_batches=args.batches)
+    _rule(f"de-confounding controls at t={ctrl['t']}")
+    _echo("  scalar_gate              = g*H_f + (1-g)*H_r        (the real thing)")
+    _echo("  forward_scaled_control   = g*H_f                    (attenuation only)")
+    _echo("  shuffled_reverse_control = g*H_f + (1-g)*shuffle(H_r) (alignment destroyed)")
+    _echo("")
+    _echo("  " + f"{'condition':<26}" + "".join(f"{f'g={g}':>10}" for g in ctrl["gates"]))
+    for name, rows in ctrl["conditions"].items():
+        _echo("  " + f"{name:<26}" + "".join(f"{rows[g]['loss']:>10.4f}" for g in ctrl["gates"]))
+    _rule("how to read this")
+    _echo("  The gate sweep alone is confounded: lowering g both admits the reverse")
+    _echo("  direction AND attenuates the pretrained forward path. Compare against the")
+    _echo("  controls. If scalar_gate beats forward_scaled_control at the same g, the")
+    _echo("  reverse recurrence carries real information; if it only beats")
+    _echo("  shuffled_reverse_control too, that information is position-aligned.")
+
+    if args.json_out:
+        Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.json_out).write_text(
+            json.dumps(
+                {"fusions": res, "gate_sweep": sweep, "controls": ctrl}, indent=2, default=str
+            )
+        )
+        _echo(f"\n  wrote {args.json_out}")
+    return 0
+
+
 def cmd_unsloth_report(args) -> int:
     from .mlx_backend.capability import capability_report, render
 
@@ -1054,6 +1129,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--probe-layer", type=int, default=None, help="DeltaNet layer to probe")
     sp.add_argument("--json-out", default=None)
     sp.set_defaults(func=cmd_smoke_bidir, steps=None, max_steps=None)
+
+    sp = common(sub.add_parser("compare-fusion", help="untrained loss per fusion strategy + gate sweep"))
+    sp.add_argument("--noise-levels", type=float, nargs="+", default=[0.1, 0.25, 0.5, 0.75, 0.9])
+    sp.add_argument("--gate-sweep-t", type=float, default=0.5)
+    sp.add_argument("--batches", type=int, default=4)
+    sp.add_argument("--json-out", default=None)
+    sp.set_defaults(func=cmd_compare_fusion, steps=None, max_steps=None)
 
     sp = common(sub.add_parser("unsloth-report", help="verified Unsloth/MLX backend capabilities"))
     sp.add_argument("--json", action="store_true")

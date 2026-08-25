@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
+import numpy as np
 import torch
 
 from ..config import DiffusionConfig
@@ -76,8 +77,10 @@ class DiffusionCollator:
             examples: batch of clean windows.
             t: fixed noise level(s) for evaluation. None -> sample from the schedule.
         """
-        prefix = torch.stack([e.prefix_ids for e in examples])
-        x0 = torch.stack([e.canvas_ids for e in examples])
+        # Datasets store numpy so both backends share one data path; the torch
+        # collator converts at the boundary.
+        prefix = torch.from_numpy(np.stack([e.prefix_ids for e in examples]))
+        x0 = torch.from_numpy(np.stack([e.canvas_ids for e in examples]))
         B = x0.shape[0]
 
         if t is None:

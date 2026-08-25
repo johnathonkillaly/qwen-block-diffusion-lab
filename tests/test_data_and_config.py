@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 
@@ -114,15 +115,18 @@ def test_topk_expectation_approximates_the_full_one():
 
 
 class DummyTokenizer:
-    """Whitespace tokenizer, enough to exercise windowing without a checkpoint."""
+    """Whitespace tokenizer, enough to exercise windowing without a checkpoint.
+
+    Exposes `encode`/`decode` only -- the same surface `qdif.data.datasets.encode`
+    relies on, which is what lets the torch and MLX backends share one data path.
+    """
 
     vocab_size = 100
     eos_token_id = 99
     mask_token_id = None
 
-    def __call__(self, text, add_special_tokens=False, return_tensors=None):
-        ids = [(abs(hash(w)) % 90) + 1 for w in text.split()]
-        return {"input_ids": torch.tensor([ids])}
+    def encode(self, text, add_special_tokens=False):
+        return [(abs(hash(w)) % 90) + 1 for w in text.split()]
 
     def decode(self, ids, skip_special_tokens=False):
         return " ".join(str(int(i)) for i in ids)
@@ -150,9 +154,9 @@ def test_dataset_windows_do_not_overlap_by_default():
 
     texts = [" ".join(f"w{i}" for i in range(96))]
     ds = CanvasDataset(texts, DummyTokenizer(), prefix_length=8, canvas_length=16)
-    joined = torch.cat([ds[0].prefix_ids, ds[0].canvas_ids])
-    joined_next = torch.cat([ds[1].prefix_ids, ds[1].canvas_ids])
-    assert not torch.equal(joined, joined_next)
+    joined = np.concatenate([ds[0].prefix_ids, ds[0].canvas_ids])
+    joined_next = np.concatenate([ds[1].prefix_ids, ds[1].canvas_ids])
+    assert not np.array_equal(joined, joined_next)
 
 
 def test_collator_produces_a_consistent_batch():

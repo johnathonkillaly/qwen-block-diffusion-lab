@@ -79,8 +79,11 @@ from dataclasses import dataclass
 
 import mlx.core as mx
 import mlx.nn as nn
+import numpy as np
 
 FUSION_STRATEGIES = ("mean", "scalar_gate", "token_gate", "concat_proj")
+#: Controls, used only by `fusion_eval` to de-confound the gate sweep. Not training targets.
+CONTROL_STRATEGIES = ("forward_scaled_control", "shuffled_reverse_control")
 
 
 def _logit(p: float) -> float:
@@ -245,6 +248,45 @@ class ConcatProjFusion(Fusion):
         return (cat @ self.w_p).astype(h_f.dtype)
 
 
+class ScaledForwardControl(Fusion):
+    """CONTROL: H = g * H_f. Uses no reverse information at all.
+
+    Isolates the confound in the gate sweep. Lowering the fusion gate does two
+    things at once -- it admits the reverse direction AND it attenuates the
+    pretrained forward path. If simply scaling H_f down reproduces the improvement,
+    the reverse recurrence is contributing nothing and the "gain" is attenuation.
+    """
+
+    def __init__(self, gate: float = 0.5):
+        super().__init__()
+        self.g = float(gate)
+
+    def __call__(self, h_f, h_r):
+        return (self.g * h_f.astype(mx.float32)).astype(h_f.dtype)
+
+
+class ShuffledReverseControl(Fusion):
+    """CONTROL: H = g*H_f + (1-g)*H_r with H_r's positions randomly permuted.
+
+    Keeps the reverse pathway's magnitude and per-channel statistics but destroys
+    the position alignment that makes it meaningful. If this matches real reverse
+    fusion, the benefit is not positional information.
+    """
+
+    def __init__(self, gate: float = 0.5, seed: int = 0):
+        super().__init__()
+        self.g = float(gate)
+        self.seed = seed
+
+    def __call__(self, h_f, h_r):
+        C = h_r.shape[1]
+        rng = np.random.default_rng(self.seed)
+        perm = mx.array(rng.permutation(C))
+        shuffled = mx.take(h_r, perm, axis=1)
+        g = self.g
+        return (g * h_f.astype(mx.float32) + (1 - g) * shuffled.astype(mx.float32)).astype(h_f.dtype)
+
+
 def build_fusion(strategy: str, num_v_heads: int, head_v_dim: int, gate_init: float) -> Fusion:
     if strategy == "mean":
         return MeanFusion()
@@ -254,6 +296,10 @@ def build_fusion(strategy: str, num_v_heads: int, head_v_dim: int, gate_init: fl
         return TokenGateFusion(num_v_heads, gate_init)
     if strategy == "concat_proj":
         return ConcatProjFusion(head_v_dim)
+    if strategy == "forward_scaled_control":
+        return ScaledForwardControl(gate_init)
+    if strategy == "shuffled_reverse_control":
+        return ShuffledReverseControl(gate_init)
     raise ValueError(f"unknown fusion {strategy!r}; expected one of {FUSION_STRATEGIES}")
 
 
