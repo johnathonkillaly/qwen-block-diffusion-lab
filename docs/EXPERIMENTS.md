@@ -208,3 +208,166 @@ scale is noise.** Do not quote the speedup.
    assumes.
 5. Rank sweep 8/16/32/64 (research question 5); self-conditioning (12); denoising-step
    sweep 1/2/4/8/16/32 (7).
+
+---
+---
+
+# v0.2 — Bidirectional Gated DeltaNet on Qwen3.5-4B (Unsloth/MLX)
+
+Appended, not rewritten. The v0.1 false positive and its correction above remain
+part of the record.
+
+**Backend change.** v0.2 runs on Unsloth, which on Apple silicon is an MLX stack
+(`DEVICE_TYPE == "mlx"`). See [UNSLOTH_BACKEND.md](UNSLOTH_BACKEND.md). The v0.1
+torch numbers above are **historical reference only** — different framework,
+different model. The controlled comparison is ablation **A vs B**, both inside MLX
+on the same 4B checkpoint, differing by one boolean.
+
+**Model.** `unsloth/Qwen3.5-4B-Base`, BF16, from `/Volumes/SHUTTLE`. 32 layers,
+8 full-attention at [3,7,11,15,19,23,27,31], 24 Gated DeltaNet, hidden 2560, vocab
+248,320, tied embeddings, `linear_num_value_heads/num_key_heads = 2` — so the
+DeltaNet head-replication path that was **dead code at 0.8B** is live here.
+
+## Hypothesis
+
+A pretrained causal Gated DeltaNet can provide useful bidirectional diffusion
+representations if the *same* weights are evaluated forward and reversed over the
+canvas and the aligned directional representations are fused. Full design and the
+fusion-point justification: [BIDIRECTIONAL_DELTANET.md](BIDIRECTIONAL_DELTANET.md).
+
+## Phase 1 — architecture smoke test: **12/12 PASS**
+
+`qdif smoke-bidir -c configs/v02_B_mean_fusion.yaml`
+
+| # | check | result |
+|---|---|---|
+| 1 | 4B loaded via Unsloth/MLX | 4,205,751,296 params, 8.41 GB bf16, 0.9 s; `Unsloth: Patched GatedDeltaNet with memory-efficient custom VJP.` |
+| 2 | architecture discovered at runtime | 32 layers, 8 full-attn / 24 DeltaNet, repeat factor 2, vision tower not loaded |
+| 3 | forward DeltaNet output | `(1,24,32,128)` bf16, finite |
+| 4 | reverse DeltaNet output | `(1,16,32,128)`, finite, `max|H_r − H_f| = 4.83e-02` |
+| 5 | position alignment | `flip(flip(x)) == x`; perturbing `canvas[0]` leaves `H_r[-1]` **exactly** unchanged |
+| 6 | fused output | canvas moves `1.90e+00`; prefix moves **0.000e+00** |
+| 7 | shared parameter identity | id match across all 24 wrapped layers; total 4,216,111,104 = base + lora 3,145,728 + conditioner 7,214,080 + fusion 0 |
+| 8 | bidirectionality probe | see below |
+| 9 | finite diffusion loss | 10.890517 |
+| 10 | gradients only where expected | 34 nonzero (32 `lora_b` + 2 conditioner), 34 zero (`lora_a` at init — expected), **0 base tensors touched** |
+| 11 | peak unified memory | 9.59 GB (unified, not VRAM); active 8.45 GB |
+| 12 | runtime ratio | 1.23× forward, 1.19× forward+backward |
+
+### Directionality probe (layer 0, the flagship diagnostic)
+
+| condition | earlier positions affected | mean L2 | max L2 | cosine change | prefix affected |
+|---|---|---|---|---|---|
+| native causal DeltaNet | **0 / 15** | 0.0000e+00 | 0.0000e+00 | 3.58e-08 | 0 |
+| bidirectional DeltaNet | **15 / 15** | 2.1886e-02 | 7.2176e-02 | 4.66e-05 | 0 |
+
+All three required properties hold: the recurrence really is causal by construction,
+the reverse pass really does carry information backwards, and the leakage boundary
+holds in both conditions.
+
+## Phase 2 — one-batch overfit: **both pass, and the test is saturated**
+
+150 steps, batch 2, canvas 32, prefix 16, t ∈ [0, 0.5], LoRA r=16 on full-attention
+q/k/v/o only, 10,359,808 trainable (0.246%).
+
+| | A — causal (v0.1 architecture) | B — bidirectional, mean fusion |
+|---|---|---|
+| first loss | 9.4776 | **7.6199** |
+| final loss | 0.00011 | 0.00008 |
+| identity accuracy | 3.1% → **100%** | 1.6% → **100%** |
+| corrupted-position accuracy | **100%** (tail mean 100%) | **100%** (tail mean 100%) |
+| lift over copy | +15.6% (tail +23.6%) | +15.6% (tail +23.6%) |
+| next-token accuracy | 0.0% | 0.0% |
+| peak unified memory | 10.16 GB | 10.41 GB |
+| throughput | 263 tok/s | 214 tok/s |
+| s/step | 0.243 | 0.299 |
+
+**The one-batch test cannot discriminate A from B at 4B.** Both saturate: loss ~1e-4,
+100% corrupted-position accuracy, identical lift. Final metrics are bit-identical
+because both perfectly memorise the same batch. This is itself a methodological
+result — at 0.8B the same test was discriminative (v0.1 experiments 001 vs 004);
+at 4B it is not, and only held-out evaluation can decide anything.
+
+The one real difference is the **initial** loss: 7.62 (B) vs 9.48 (A). At step 0 the
+LoRA and conditioner are zero-initialised, so the fusion is the only difference. That
+looked like the first positive signal — so it was tested properly.
+
+## The measurement that matters so far: **negative for the hypothesis**
+
+`qdif compare-fusion`. Zero training. 2 batches × 2, canvas 32, identical seeded
+corruption in every condition, t = 0.5.
+
+```
+condition                      g=1.0    g=0.75     g=0.5    g=0.25     g=0.0
+scalar_gate                   8.1838    7.8789    7.5729    7.3256    7.4303
+forward_scaled_control        8.1838    8.1415    8.1928    8.4278   13.6508
+shuffled_reverse_control      8.1807    7.8588    7.4774    6.8908    7.0739
+```
+
+Untrained loss by fusion, across noise levels:
+
+| condition | t=0.1 | t=0.25 | t=0.5 | t=0.75 | t=0.9 |
+|---|---|---|---|---|---|
+| A_causal | 11.8233 | 9.6504 | 8.1838 | 8.8646 | 9.7234 |
+| B_mean | 8.5182 | 7.8622 | 7.5729 | 7.9900 | 9.0420 |
+| B_scalar_gate (g=0.95) | 11.7761 | 9.5916 | 8.0994 | 8.6925 | 9.5740 |
+| B_concat_proj (identity init) | 11.8233 | 9.6504 | 8.1838 | 8.8646 | 9.7234 |
+
+Two conclusions, and the second is the important one:
+
+1. **Attenuation is ruled out.** `forward_scaled_control` (`g·H_f`, no reverse
+   information at all) stays flat and collapses at g = 0. Merely scaling the
+   pretrained forward path down does not reproduce the gain.
+2. **But the gain is not position-aligned information.**
+   `shuffled_reverse_control` — the same reverse output with canvas positions
+   randomly permuted — is **as good or better at every gate value** (6.89 vs 7.33 at
+   g = 0.25).
+
+If destroying `H_r`'s positional alignment does not hurt, then at initialisation the
+benefit is not "position *i* learning about positions > *i*". The most likely
+mechanism is unstructured: adding a correctly-scaled, largely decorrelated signal to
+the DeltaNet output disrupts the model's autoregressive readout — and v0.1 established
+that AR-ness is exactly the unadapted model's problem under the unshifted x0 objective.
+
+**This is a negative result for the v0.2 hypothesis at initialisation.** It does not
+refute it: the whole premise is that adapters *learn* to exploit the reverse
+direction, and the model has never seen a fused representation. It does mean the
+lower untrained loss must **not** be reported as evidence that bidirectional DeltaNet
+works, and it makes the held-out trained comparison the only thing that can decide.
+
+## Kill / continue criteria — recorded BEFORE the held-out run
+
+Fixed here so they cannot be moved after seeing the result. Phase 3: train on a small
+real corpus, evaluate on entirely unseen text at t ∈ {0.10, 0.25, 0.50, 0.75, 0.90,
+1.00}, matched steps / seeds / data, A vs B vs C vs D.
+
+**Continue v0.2** (bidirectional DeltaNet earns its place) if *both*:
+- held-out **lift over copy** for the best bidirectional config exceeds A by
+  **≥ +3 percentage points** averaged over t ≥ 0.50, and
+- held-out **corrupted-position accuracy** exceeds A at **t = 0.50 and t = 0.75**
+  individually, not merely on average.
+
+**Continue v0.1 instead** (periodic full attention is enough) if:
+- A is within **1 point** of the best bidirectional config on held-out lift at
+  t ≥ 0.50. The 1.19–1.23× compute and the extra machinery are not worth a tie.
+
+**Kill bidirectional DeltaNet** if any of:
+- held-out lift for every bidirectional config is **≤ A** at t ≥ 0.50, or
+- the learned gate converges back to g ≥ 0.9 (the model choosing to ignore the
+  reverse path), or
+- training destabilises — gradient norm or loss diverging where A is stable, or
+- `shuffled_reverse_control` remains competitive with real fusion **after** training,
+  which would show the reverse pass is a perturbation and not information.
+
+The last one is the sharpest test and it must be run at Phase 3, not skipped.
+
+## Not established in v0.2
+
+- **Nothing on held-out generalisation.** Phase 3 has not been run.
+- No result for ablations C (scalar gate), D (DeltaNet LoRA) or E (token gate) under
+  training — only their untrained losses.
+- No sampler / generation results at 4B; no step-count sweep.
+- AR-preservation was not re-measured at 4B (v0.1 measured a 14.4× reference
+  perplexity degradation with adapters on, restored exactly by toggling them off).
+- The reverse pass starts from a zero recurrent state mid-document, a regime the
+  pretrained recurrence never saw. Whether that is the limiting factor is untested.

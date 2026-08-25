@@ -177,3 +177,117 @@ Things learned that nobody asked about, recorded because they shape everything e
   weaker check.
 - **Self-perplexity is a degenerate metric for adapter damage.** A model that repeats
   one token scores ppl 1.013 on its own output. Use a fixed reference text.
+
+---
+
+# v0.2 questions — shared-weight bidirectional Gated DeltaNet
+
+Branch `experiment/bidirectional-deltanet`, Qwen3.5-4B-Base on Unsloth/MLX.
+Evidence: [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) v0.2 section,
+[docs/BIDIRECTIONAL_DELTANET.md](docs/BIDIRECTIONAL_DELTANET.md).
+
+> **Global caveat, unchanged and now more important.** No held-out result exists in
+> either version. v0.2 adds a 4B architecture that works and a one-batch test that
+> **saturates**, which means the only discriminating evidence so far is a
+> zero-training probe — and that probe is negative.
+
+### 13. Can the same pretrained DeltaNet weights be evaluated in both directions?
+
+**Answered — yes, mechanically, and it is cheap.**
+
+24 of 32 layers wrapped, all sharing base tensors by object identity
+(`test_weights_are_shared_not_duplicated`). Parameter count goes 4,205,751,296 →
+4,216,111,104, and every added parameter is LoRA (3.1 M), timestep conditioner
+(7.2 M) or fusion (0 for `mean`). The 4B backbone did not become 8B.
+
+Cost 1.23× forward / 1.19× forward+backward — lower than the naive 2× because only
+24/32 layers are DeltaNet and the reverse pass covers the canvas only.
+
+### 14. Does the reverse recurrence actually carry information backwards?
+
+**Answered — yes, and the leakage boundary holds.**
+
+Per-layer probe: perturbing the last canvas token moves **0/15** earlier positions
+under the native causal recurrence and **15/15** under bidirectional fusion, with
+**0** prefix positions moving in either condition.
+
+### 15. Is that backward information *useful* to the pretrained model?
+
+**Answered for the untrained model — NO, not as position-aligned information.**
+
+This is the sharpest negative result of v0.2. With no training at all, lowering the
+fusion gate does reduce diffusion loss (8.18 → 7.33 at g = 0.25) and the
+`forward_scaled_control` rules out mere attenuation. But
+`shuffled_reverse_control` — the same reverse output with its canvas positions
+randomly permuted — is **as good or better at every gate value** (6.89 vs 7.33).
+
+Destroying positional alignment does not hurt, so the untrained gain is not
+"position *i* learning about positions > *i*". It looks like an unstructured
+perturbation that disrupts the model's autoregressive readout, which v0.1 showed is
+the unadapted model's core problem under the unshifted x0 objective.
+
+*Does not refute the hypothesis* — the premise is that adapters *learn* to use the
+reverse direction, and the model has never seen a fused representation. But it
+lowers the prior, and it means the untrained loss drop must not be quoted as
+success.
+
+*To move it:* Phase 3, and specifically re-running `shuffled_reverse_control`
+**after** training. If shuffled stays competitive post-training, the reverse pass is
+a perturbation, not information, and v0.2 should be killed.
+
+### 16. Does bidirectional DeltaNet improve one-batch memorisation?
+
+**Answered — no, because the test saturates at 4B.**
+
+A (causal) and B (bidirectional, mean fusion) both reach loss ~1e-4, 100% identity
+accuracy and 100% corrupted-position accuracy in 150 steps. Final metrics are
+identical to the decimal. At 0.8B this test discriminated (v0.1 001 vs 004); at 4B
+it does not.
+
+Methodological consequence: **one-batch overfit is a plumbing check at 4B, not a
+benchmark.** Only held-out evaluation can rank these configs.
+
+### 17. Which fusion strategy should be preferred?
+
+**Open.** Only untrained losses exist. `concat_proj` is an exact identity at init
+(as designed), `scalar_gate` and `token_gate` sit ~0.05–0.17 nats below causal at
+their 0.95 init, `mean` is far below but is the condition most confounded with the
+shuffled control. A trained ranking requires Phase 3.
+
+A cheap, decisive diagnostic once trained: **read the learned gate.** If
+`scalar_gate` converges back to g ≥ 0.9, the model is choosing to ignore the reverse
+path — that is a kill criterion, and it is recorded as one.
+
+### 18. Can Unsloth Studio own a custom diffusion training loop?
+
+**Answered — no.** `POST /api/train/start` has a closed `training_type` enum
+(`LoRA/QLoRA`, `Full Finetuning`, `Continued Pretraining`) and no custom-script,
+hook, callback or custom-loss field among its 72 parameters. Studio owns model
+management, GGUF export and AR inference; the Unsloth **Python** engine (MLX + the
+Qwen3.5 GatedDeltaNet custom VJP) runs the training. Details and the full capability
+table: [docs/UNSLOTH_BACKEND.md](docs/UNSLOTH_BACKEND.md).
+
+Also worth knowing: Studio's `/api/train/diffusion/*` endpoints are **image**
+diffusion LoRA (datasets of images and captions), not discrete text diffusion.
+
+### 19. What does Unsloth actually contribute on Apple silicon?
+
+**Answered.** One component, and it is the right one:
+`unsloth_zoo.gated_delta_vjp.patch_gated_delta()`, a memory-efficient custom VJP for
+**Qwen3.5's** GatedDeltaNet with hand-written Metal chunk kernels, which recomputes
+recurrent states in backward instead of holding all T intermediates. It is verified
+active in every run header, and it serves both the forward and the reverse pass.
+
+Triton, xformers and bitsandbytes never activate on this platform — which is *why*
+v0.2 is BF16 base + BF16 LoRA rather than QLoRA.
+
+## Updates to earlier questions
+
+**Q3 (does DeltaNet causality prevent bidirectional diffusion?)** — the causality is
+confirmed at 4B and now *worked around* rather than merely documented. Whether the
+workaround helps is Q15, currently negative at initialisation.
+
+**Q10 (Qwen3.5 → Qwen3.8-27B)** — one migration gap from v0.1 is now closed: 4B has
+`linear_num_value_heads/num_key_heads = 2`, so the DeltaNet head-replication path
+that was dead code at 0.8B is exercised. 27B has ratio 3 and untied embeddings, both
+still untested.

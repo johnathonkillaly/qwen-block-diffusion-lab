@@ -15,7 +15,41 @@ record enough diagnostics to tell whether the idea is working.
 
 ---
 
-## Status
+## v0.2 — bidirectional Gated DeltaNet (branch `experiment/bidirectional-deltanet`)
+
+v0.2 moves to **Qwen3.5-4B-Base** on the **Unsloth** engine and asks whether the
+pretrained causal DeltaNet recurrence can be run in *both* directions over the canvas
+with shared weights, fusing the two directional representations.
+
+Architecture smoke test: **12/12 pass.** Weights shared by object identity (4B stays
+4B), the reverse recurrence demonstrably carries information backwards (0/15 earlier
+positions move under causal, 15/15 under bidirectional), and the leakage boundary
+holds exactly (0 prefix positions move in either condition). Cost: **1.23×** forward,
+**1.19×** forward+backward.
+
+**But the first discriminating measurement is negative.** With zero training, a
+position-**shuffled** reverse control matches or beats correctly-aligned reverse
+fusion at every gate value. So the untrained loss improvement is not backward
+positional information — it is an unstructured perturbation of the autoregressive
+readout. The one-batch overfit test cannot arbitrate: at 4B it saturates, with the
+causal and bidirectional configs both hitting loss ~1e-4 and 100% corrupted-position
+accuracy.
+
+Held-out training is the only thing that can decide, and the kill/continue criteria
+are recorded **before** that run in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
+
+Two Unsloth findings worth knowing: on Apple silicon Unsloth **is** an MLX stack
+(`DEVICE_TYPE == "mlx"`), and it ships a Qwen3.5-specific GatedDeltaNet custom VJP
+that v0.2 runs on. Unsloth **Studio** cannot own this training loop — its
+`/api/train/start` has a closed SFT schema with no custom-loss hook. Details:
+[docs/UNSLOTH_BACKEND.md](docs/UNSLOTH_BACKEND.md),
+[docs/BIDIRECTIONAL_DELTANET.md](docs/BIDIRECTIONAL_DELTANET.md).
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/qdif smoke-bidir -c configs/v02_B_mean_fusion.yaml
+```
+
+## Status (v0.1, Qwen3.5-0.8B / torch)
 
 | Component | State |
 |---|---|
