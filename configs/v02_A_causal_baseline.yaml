@@ -1,0 +1,78 @@
+# v0.2 ablation A -- the v0.1 hybrid, reproduced inside the MLX backend.
+#
+# Causal DeltaNet + bidirectional full attention. This is the CONTROL for every
+# other v0.2 config. It matters that A runs here rather than being taken from the
+# v0.1 torch numbers: the DeltaNet wrapper is bit-exact with upstream when
+# `enabled: false` (tests/test_bidirectional_deltanet.py::test_wrapper_disabled_is_exact),
+# so A and B differ by exactly one boolean, in one framework, on one checkpoint.
+#
+# The v0.1 torch results remain in docs/EXPERIMENTS.md as historical reference only;
+# they are NOT the baseline for v0.2, because they are a different framework on a
+# different model.
+
+model:
+  id: unsloth/Qwen3.5-4B-Base
+  local_path: /Volumes/SHUTTLE/hub/models--unsloth--Qwen3.5-4B-Base/snapshots/61541fe4aed37b6a1e615edd5cbf5a3f660312b1
+  local_files_only: true
+  text_only: true
+
+training:
+  backend: mlx            # Unsloth's Apple-silicon path; see docs/UNSLOTH_BACKEND.md
+  mode: lora
+  dtype: bf16             # BF16 base + BF16 LoRA. No 4-bit for Qwen3.5.
+  quantization: none
+  batch_size: 2
+  grad_accum: 1
+  learning_rate: 2.0e-4
+  max_grad_norm: 1.0
+  warmup_steps: 5
+  max_steps: 150
+  log_every: 5
+  sample_every: 25
+  seed: 1234
+  show_reconstruction: true
+
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.0
+  init_scale: 0.01
+  full_attention: true    # the 8 full-attention layers only
+  deltanet: false
+  deltanet_gates: false
+  mlp: false
+  layer_indices: []
+
+bidirectional_deltanet:
+  enabled: false          # <-- the one flag that separates A from B
+  share_base_weights: true
+  fusion: mean
+  gate_init: 0.95
+  layer_indices: []
+  train_reverse_lora: false
+
+diffusion:
+  canvas_length: 32
+  corruption: uniform
+  schedule: uniform
+  t_min: 0.0
+  t_max: 0.5
+  loss_on: all
+  timestep_conditioning: true
+  self_conditioning: false
+  bidirectional_canvas: true
+
+sampler:
+  steps: 8
+  strategy: confidence
+  temperature: 0.0
+  num_blocks: 1
+
+data:
+  source: dev
+  prefix_length: 16
+  max_examples: 8
+
+run:
+  name: v02-A-causal
+  output_dir: runs

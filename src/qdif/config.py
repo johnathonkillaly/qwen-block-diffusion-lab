@@ -46,6 +46,14 @@ class LoraConfig:
     layer_indices: list[int] = field(default_factory=list)
     init_scale: float = 0.01
 
+    # --- v0.2 / MLX backend: target families selected by flag rather than preset,
+    # so ablations can turn one family on at a time and the report says exactly
+    # which modules are trainable.
+    full_attention: bool = True
+    deltanet: bool = False
+    deltanet_gates: bool = False
+    mlp: bool = False
+
 
 @dataclass
 class DiffusionConfig:
@@ -73,6 +81,34 @@ class DiffusionConfig:
     #: experiment 001. "corrupted" scores only the positions noise actually changed,
     #: which removes the copy shortcut at the cost of no gradient at t = 0.
     loss_on: str = "all"
+
+
+@dataclass
+class BidirectionalDeltaNetConfig:
+    """v0.2: run the pretrained Gated DeltaNet recurrence in both directions.
+
+    The recurrence itself is causal by construction (see docs/QWEN35_NOTES.md), so
+    the only way to get backward information flow through it is to evaluate the
+    *same* pretrained weights on the reversed canvas and fuse the two directional
+    representations. See docs/BIDIRECTIONAL_DELTANET.md.
+    """
+
+    enabled: bool = False
+    #: Evaluate the same parameter tensors twice rather than instantiating a second
+    #: DeltaNet. Setting this False is not implemented -- a 4B backbone must not
+    #: silently become an 8B backbone.
+    share_base_weights: bool = True
+    #: "mean" | "scalar_gate" | "token_gate" | "concat_proj"
+    fusion: str = "mean"
+    #: Initial value of the forward-path gate for the learned fusions. Close to 1.0
+    #: means "start from the pretrained causal computation and learn to admit the
+    #: reverse direction", rather than destroying the pretrained path at step 0.
+    gate_init: float = 0.95
+    #: Restrict bidirectional treatment to these DeltaNet layer indices. Empty = all.
+    layer_indices: list[int] = field(default_factory=list)
+    #: Train a separate LoRA on the reverse pass. Not implemented in this milestone;
+    #: the reverse pass shares the forward pass's adapters.
+    train_reverse_lora: bool = False
 
 
 @dataclass
@@ -133,6 +169,9 @@ class ExperimentConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     lora: LoraConfig = field(default_factory=LoraConfig)
     diffusion: DiffusionConfig = field(default_factory=DiffusionConfig)
+    bidirectional_deltanet: BidirectionalDeltaNetConfig = field(
+        default_factory=BidirectionalDeltaNetConfig
+    )
     training: TrainingConfig = field(default_factory=TrainingConfig)
     sampler: SamplerConfig = field(default_factory=SamplerConfig)
     data: DataConfig = field(default_factory=DataConfig)

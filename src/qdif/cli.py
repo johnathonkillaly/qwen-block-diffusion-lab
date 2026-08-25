@@ -802,6 +802,135 @@ def cmd_compare(args) -> int:
     return 0
 
 
+def cmd_smoke_bidir(args) -> int:
+    """v0.2 architecture smoke test: the 12 checks that gate any training run."""
+    import mlx.core as mx
+
+    from .mlx_backend.build import build_mlx_setup
+    from .mlx_backend.probe import probe_directionality
+    from .mlx_backend.smoke import (
+        active_memory_gb,
+        benchmark_directions,
+        check_directional_outputs,
+        check_loss_and_gradients,
+        peak_unified_memory_gb,
+    )
+
+    cfg = _load_cfg(args)
+    if cfg.training.backend != "mlx":
+        _echo(f"smoke-bidir requires training.backend: mlx (config says {cfg.training.backend!r})")
+        return 1
+
+    _rule("1-2  load + discovered architecture")
+    setup = build_mlx_setup(cfg, echo=_echo)
+    r = setup.load_report
+    _echo(f"  model_type          {r.model_type}")
+    _echo(f"  layers              {r.num_hidden_layers}")
+    _echo(f"  hidden / inter      {r.hidden_size} / {r.intermediate_size}")
+    _echo(f"  vocab               {r.vocab_size:,}")
+    _echo(f"  attn heads / kv     {r.num_attention_heads} / {r.num_key_value_heads}, head_dim {r.head_dim}")
+    _echo(f"  full attention      {len(r.full_attention_layers)} layers: {r.full_attention_layers}")
+    _echo(f"  gated deltanet      {len(r.linear_attention_layers)} layers")
+    _echo(f"  full_attn_interval  {r.full_attention_interval}")
+    _echo(
+        f"  deltanet heads      k={r.linear_num_key_heads} v={r.linear_num_value_heads} "
+        f"(repeat factor {r.head_repeat_factor}), k-dim {r.linear_key_head_dim} "
+        f"v-dim {r.linear_value_head_dim}, conv {r.linear_conv_kernel_dim}"
+    )
+    _echo(f"  tied embeddings     {r.tie_word_embeddings}")
+    _echo(f"  vision loaded       {r.vision_loaded}")
+    _echo(f"  params              {r.total_params:,} ({r.param_bytes / 1e9:.2f} GB {r.dtype})")
+    for note in r.notes:
+        _echo(f"  * {note}")
+
+    checks = []
+    _rule("3-7  directional outputs, alignment, fusion, weight sharing")
+    checks += check_directional_outputs(setup, canvas_length=16, prefix_length=8)
+    for c in checks:
+        _echo(c.line())
+
+    _rule("8  bidirectionality probe (per-layer)")
+    probe = probe_directionality(
+        setup,
+        args.text,
+        canvas_length=16,
+        layer_index=args.probe_layer,
+    )
+    _echo(f"  probing DeltaNet layer {probe['layer_probed']} of {probe['deltanet_layers'][:6]}...")
+    from .mlx_backend.probe import DirectionStats
+
+    for key in ("causal", "bidirectional"):
+        _echo(DirectionStats(**probe[key]).summary())
+    _echo(f"  [{'PASS' if probe['pass'] else 'FAIL'}] {probe['interpretation']}")
+
+    _rule("9-10  diffusion loss and gradient verification")
+    grad = check_loss_and_gradients(setup, cfg, canvas_length=16, prefix_length=8)
+    _echo(f"  loss                      {grad['loss']:.6f}  finite={grad['finite']}")
+    _echo(f"  grad tensors              {grad['num_grad_tensors']:,}")
+    _echo(f"  nonzero grads             {grad['nonzero_grads']} by family {grad['nonzero_by_family']}")
+    _echo(f"  zero grads                {grad['zero_grads']}")
+    _echo(f"  frozen base untouched     {'YES (correct)' if grad['frozen_clean'] else 'NO (WRONG)'}")
+    if grad["unexpected_base_grads"]:
+        _echo(f"    offenders: {grad['unexpected_base_grads']}")
+    _echo("  largest grad norms:")
+    for path, n in grad["grad_norms"].items():
+        _echo(f"    {path:<58} {n:.6f}")
+    _echo("  metrics on the smoke batch (untrained model, random tokens):")
+    for k in ("identity_accuracy", "corrupted_accuracy", "copy_baseline_accuracy",
+              "lift_over_copy", "next_token_accuracy", "mean_entropy"):
+        _echo(f"    {k:<26} {grad['metrics'][k]:.4f}")
+
+    _rule("11-12  memory and runtime ratio")
+    bench = benchmark_directions(setup, canvas_length=args.canvas or 32, prefix_length=16)
+    c, b, ratio = bench["causal"], bench["bidirectional"], bench["ratio"]
+    _echo(f"  canvas {bench['canvas_length']} + prefix {bench['prefix_length']}")
+    _echo(f"  {'condition':<18}{'forward s':>12}{'fwd+bwd s':>12}")
+    _echo(f"  {'causal (A)':<18}{c['forward_s']:>12.4f}{c['fwd_bwd_s']:>12.4f}")
+    _echo(f"  {'bidirectional':<18}{b['forward_s']:>12.4f}{b['fwd_bwd_s']:>12.4f}")
+    _echo(f"  {'ratio v0.2/v0.1':<18}{ratio['forward']:>12.2f}x{ratio['fwd_bwd']:>11.2f}x")
+    _echo(f"  peak unified memory  {peak_unified_memory_gb():.2f} GB (Apple unified memory, not VRAM)")
+    _echo(f"  active memory        {active_memory_gb():.2f} GB")
+
+    _rule("parameter budget")
+    p = setup.params
+    _echo(f"  total          {p['total_params']:>15,}")
+    _echo(f"  trainable      {p['trainable_params']:>15,}  ({p['percent_trainable']:.5f}%)")
+    _echo(f"  frozen         {p['frozen_params']:>15,}")
+    _echo(f"  by family      {p['trainable_by_family']}")
+    _echo(f"  weights        {p['param_gb']:.2f} GB   trainable {p['trainable_mb']:.2f} MB")
+
+    all_pass = all(c.passed for c in checks) and probe["pass"] and grad["finite"] and grad["frozen_clean"]
+    _rule("verdict")
+    _echo("  ALL CHECKS PASSED -- safe to run the one-batch test." if all_pass
+          else "  FAILURES PRESENT -- stop and diagnose before training.")
+
+    if args.json_out:
+        payload = {
+            "setup": setup.summary(),
+            "checks": [c.__dict__ for c in checks],
+            "probe": probe,
+            "gradients": grad,
+            "benchmark": bench,
+            "peak_unified_gb": peak_unified_memory_gb(),
+            "all_pass": all_pass,
+        }
+        Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.json_out).write_text(json.dumps(payload, indent=2, default=str))
+        _echo(f"\n  wrote {args.json_out}")
+    return 0 if all_pass else 1
+
+
+def cmd_unsloth_report(args) -> int:
+    from .mlx_backend.capability import capability_report, render
+
+    report = capability_report()
+    if args.json:
+        _echo(json.dumps(report, indent=2, default=str))
+        return 0
+    render(report, _echo, _rule)
+    return 0
+
+
 def cmd_memory(args) -> int:
     from .env.memory import standard_profiles
 
@@ -915,6 +1044,20 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--max-new-tokens", type=int, default=32)
     sp.add_argument("--mlx", action="store_true", help="also run the mlx-lm AR baseline")
     sp.set_defaults(func=cmd_compare, max_steps=None)
+
+    sp = common(sub.add_parser("smoke-bidir", help="v0.2 bidirectional-DeltaNet architecture smoke test"))
+    sp.add_argument(
+        "--text",
+        default="The quick brown fox jumps over the lazy dog while the cat sat on the "
+        "windowsill watching the rain fall on the quiet street below the old house.",
+    )
+    sp.add_argument("--probe-layer", type=int, default=None, help="DeltaNet layer to probe")
+    sp.add_argument("--json-out", default=None)
+    sp.set_defaults(func=cmd_smoke_bidir, steps=None, max_steps=None)
+
+    sp = common(sub.add_parser("unsloth-report", help="verified Unsloth/MLX backend capabilities"))
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_unsloth_report, steps=None, max_steps=None)
 
     sp = common(sub.add_parser("memory", help="detailed memory breakdown"))
     sp.add_argument("--seq-len", type=int, default=512)
