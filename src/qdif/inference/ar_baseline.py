@@ -36,13 +36,21 @@ class ARBaselineResult:
     memory_kind: str = "n/a"
     nll: float | None = None
     perplexity: float | None = None
+    #: Teacher-forced perplexity on a FIXED reference text. Unlike `perplexity`
+    #: (which scores the model's own continuation and is degenerate when that
+    #: continuation is repetitive), this is comparable across adapter states and is
+    #: the right measure for "did the diffusion adapters damage the AR path?".
+    reference_perplexity: float | None = None
     notes: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
         ppl = f"{self.perplexity:.3f}" if self.perplexity is not None else "n/a"
+        ref = (
+            f"{self.reference_perplexity:.3f}" if self.reference_perplexity is not None else "n/a"
+        )
         return (
             f"[{self.backend}] {self.output_tokens} tok in {self.seconds:.2f}s "
-            f"({self.tokens_per_sec:.1f} tok/s) | ppl {ppl} | "
+            f"({self.tokens_per_sec:.1f} tok/s) | self-ppl {ppl} | ref-ppl {ref} | "
             f"{self.peak_memory_gb:.2f} GB {self.memory_kind}"
         )
 
@@ -55,8 +63,16 @@ def run_transformers_baseline(
     max_new_tokens: int = 64,
     temperature: float = 0.0,
     disable_adapters: bool = True,
+    reference_text: str | None = None,
 ) -> ARBaselineResult:
-    """Greedy AR decode through the same model object, adapters optionally off."""
+    """Greedy AR decode through the same model object, adapters optionally off.
+
+    Args:
+        reference_text: fixed text scored teacher-forced, independent of what the
+            model generates. Defaults to the prompt. This is the number to compare
+            across adapter states; `perplexity` (scored on the model's own output) is
+            degenerate when the output degenerates.
+    """
     from ..training.diagnostics import memory_label, peak_memory_bytes
 
     base = getattr(model, "base", model)
@@ -88,6 +104,15 @@ def run_transformers_baseline(
             logits[0, ids.shape[1] - 1 : -1].float(), new_ids
         )
 
+        ref_ids = tokenizer(reference_text or prompt, return_tensors="pt")["input_ids"].to(device)
+        ref_ppl = None
+        if ref_ids.shape[1] > 1:
+            ref_logits = base(input_ids=ref_ids, use_cache=False).logits
+            ref_nll = torch.nn.functional.cross_entropy(
+                ref_logits[0, :-1].float(), ref_ids[0, 1:]
+            )
+            ref_ppl = float(ref_nll.exp())
+
     return ARBaselineResult(
         backend="transformers" + ("" if disable_adapters else "+adapters"),
         prompt=prompt,
@@ -99,6 +124,7 @@ def run_transformers_baseline(
         memory_kind=memory_label(device),
         nll=float(nll),
         perplexity=float(nll.exp()),
+        reference_perplexity=ref_ppl,
     )
 
 

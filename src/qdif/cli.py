@@ -569,7 +569,9 @@ def cmd_train(args) -> int:
 def cmd_overfit(args) -> int:
     """The mandatory first experiment: memorise one batch, or stop and debug."""
     cfg = _load_cfg(args)
-    cfg.run.name = args.run_name or "overfit-one-batch"
+    # Derive the run directory from the config's own name so two overfit runs from
+    # two different configs cannot silently write into the same directory.
+    cfg.run.name = args.run_name or f"{cfg.run.name}-overfit"
     # --max-steps wins; otherwise respect the config but never run fewer than 60
     # steps, which is too few for the memorisation signal to be readable.
     cfg.training.max_steps = args.max_steps or max(cfg.training.max_steps, 60)
@@ -757,8 +759,15 @@ def cmd_compare(args) -> int:
         )
         _echo("  " + ar_on.summary())
         _echo("  OUTPUT: " + ar_on.output_text.replace("\n", "\\n")[:400])
-        delta = abs((ar_on.perplexity or 0) - (ar.perplexity or 0))
-        _echo(f"  perplexity shift from adapters: {delta:.4f}")
+        off, on = ar.reference_perplexity, ar_on.reference_perplexity
+        if off and on:
+            _echo(
+                f"  reference perplexity: {off:.3f} (adapters off) -> {on:.3f} (on), "
+                f"x{on / off:.2f}"
+            )
+            _echo("  This -- not self-perplexity -- is the answer to research question 8.")
+            _echo("  A large ratio means the diffusion adapters damage the AR path and the")
+            _echo("  two modes cannot coexist without toggling.")
 
     _rule("diffusion generation")
     dif = generate(model, tokenizer, args.prompt, cfg, steps=args.steps)

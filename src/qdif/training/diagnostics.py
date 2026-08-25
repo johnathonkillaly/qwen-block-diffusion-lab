@@ -119,6 +119,11 @@ class RunLogger:
         self.samples_path = self.run_dir / "reconstructions.txt"
         self.echo = echo
         self._t0 = time.time()
+        # Re-running the same run name replaces its logs. Appending would silently
+        # interleave two experiments in one metrics file.
+        for path in (self.metrics_path, self.samples_path):
+            if path.exists():
+                path.unlink()
 
     def log_step(self, record: StepRecord, echo: bool = True) -> None:
         with self.metrics_path.open("a") as f:

@@ -216,7 +216,12 @@ def train(cfg: ExperimentConfig, echo=print, fixed_batch: bool = False) -> dict:
 
     gen = torch.Generator().manual_seed(cfg.training.seed + 1)
     stream = batches(setup.dataset, cfg.training.batch_size, generator=gen)
-    frozen_examples = next(stream) if fixed_batch else None
+    # The overfit batch is the *first* `batch_size` dataset rows, not a shuffled
+    # draw, so the run is reproducible and `qdif reconstruct` evaluates exactly the
+    # examples that were memorised.
+    frozen_examples = (
+        [setup.dataset[i] for i in range(cfg.training.batch_size)] if fixed_batch else None
+    )
 
     logger.log_json(
         "setup.json",
