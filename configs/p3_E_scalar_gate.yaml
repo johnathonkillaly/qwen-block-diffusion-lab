@@ -1,0 +1,77 @@
+# Phase 3 arm B -- aligned forward/reverse shared-weight DeltaNet fusion (v0.2).
+# mechanism, reproduced inside the MLX backend). The control for arms B, C and D.
+#
+# All four Phase 3 arms are identical except for `bidirectional_deltanet`. Same
+# checkpoint, same LoRA, same steps, same seeds, same data, same eval corruption.
+
+model:
+  id: unsloth/Qwen3.5-4B-Base
+  local_path: /Volumes/SHUTTLE/hub/models--unsloth--Qwen3.5-4B-Base/snapshots/61541fe4aed37b6a1e615edd5cbf5a3f660312b1
+  local_files_only: true
+  text_only: true
+
+training:
+  backend: mlx
+  mode: lora
+  dtype: bf16
+  quantization: none
+  batch_size: 4
+  learning_rate: 2.0e-4
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  warmup_steps: 20
+  max_steps: 600
+  log_every: 50
+  save_every: 50          # doubles as the held-out eval interval
+  seed: 1234
+  show_reconstruction: false
+
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.0
+  init_scale: 0.01
+  full_attention: true
+  deltanet: false
+  deltanet_gates: false
+  mlp: false
+  layer_indices: []
+
+bidirectional_deltanet:
+  enabled: true
+  share_base_weights: true
+  mode: fusion
+  fusion: scalar_gate
+  gate_init: 0.95
+  layer_indices: []
+  train_reverse_lora: false
+
+diffusion:
+  canvas_length: 32
+  corruption: uniform
+  schedule: uniform
+  t_min: 0.0
+  t_max: 1.0            # full noise range: held-out denoising, not memorisation
+  loss_on: all
+  timestep_conditioning: true
+  self_conditioning: false
+  bidirectional_canvas: true
+
+sampler:
+  steps: 8
+  strategy: confidence
+
+data:
+  source: hf
+  hf_dataset: Salesforce/wikitext:wikitext-2-raw-v1
+  hf_split: train
+  eval_split: test        # DIFFERENT ARTICLES -> document-disjoint held-out
+  eval_max_examples: 128
+  min_chars: 200
+  text_field: text
+  prefix_length: 16
+  max_examples: 3000
+
+run:
+  name: p3-E-scalar-gate
+  output_dir: runs

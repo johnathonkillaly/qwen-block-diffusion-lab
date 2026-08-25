@@ -371,3 +371,172 @@ The last one is the sharpest test and it must be run at Phase 3, not skipped.
   perplexity degradation with adapters on, restored exactly by toggling them off).
 - The reverse pass starts from a zero recurrent state mid-document, a regime the
   pretrained recurrence never saw. Whether that is the limiting factor is untested.
+
+---
+
+## Phase 3 — held-out denoising on wikitext-2. **v0.2 continue criterion FAILED; kill criterion FIRED.**
+
+`unsloth/Qwen3.5-4B-Base`, BF16 base + BF16 LoRA r=16 on full-attention q/k/v/o only
+(3,145,728 LoRA + 7,214,080 timestep conditioner = 10,359,808 trainable, 0.246%),
+600 steps, batch 4, canvas 32, prefix 16, `t ~ U(0,1)`, seed 1234.
+
+**Data.** `Salesforce/wikitext:wikitext-2-raw-v1`. Train = 3,000 windows from the
+`train` split; held-out = 128 windows from the `test` split — a **different set of
+articles**, so the claim is document-disjoint, not merely window-disjoint. Held-out
+corruption uses a fixed seed (777) reset per noise level, so every arm sees
+byte-identical noise.
+
+All arms are identical except the DeltaNet mechanism.
+
+### Held-out corrupted-position accuracy at step 600
+
+| arm | t=0.10 | t=0.25 | t=0.50 | t=0.75 | t=0.90 | t=1.00 |
+|---|---|---|---|---|---|---|
+| **A** causal (v0.1) | **9.92%** | **6.51%** | **6.84%** | **6.70%** | **7.32%** | **7.08%** |
+| **B** aligned fusion (v0.2) | 7.10% | 6.13% | 5.44% | 5.76% | 6.55% | 5.86% |
+| **C** shuffled control | 7.97% | 6.07% | 6.18% | 5.87% | 6.92% | 6.64% |
+| **D** FLARE block-end readout | 6.93% | 5.58% | 5.36% | 5.61% | 5.79% | 5.57% |
+
+### Held-out cross entropy at step 600
+
+| arm | t=0.10 | t=0.25 | t=0.50 | t=0.75 | t=0.90 | t=1.00 |
+|---|---|---|---|---|---|---|
+| A | **6.565** | **6.564** | **6.570** | **6.577** | **6.563** | **6.571** |
+| B | 6.601 | 6.606 | 6.610 | 6.608 | 6.610 | 6.608 |
+| C | 6.574 | 6.576 | 6.576 | 6.598 | 6.575 | 6.577 |
+| D | 6.611 | 6.628 | 6.663 | 6.666 | 6.660 | 6.665 |
+
+`t = 1.00` measures the **prior, not denoising**: at full corruption the particular
+held-out continuation is not identifiable from the canvas, so a model can only produce
+*a* plausible continuation. Exact reconstruction was 0.0% for every arm at every noise
+level, as it should be on unseen text.
+
+### The measurement the hypothesis lives or dies on
+
+`corrupted_accuracy(aligned) − corrupted_accuracy(shuffled)`, tracked every 50 steps:
+
+| t | mean diff | std | slope per 100 steps | step 0 | step 600 |
+|---|---|---|---|---|---|
+| 0.50 | **−0.77%** | 0.55% | +0.03% | −1.00% | −0.74% |
+| 0.75 | **−0.61%** | 0.53% | −0.03% | −0.07% | −0.11% |
+| 0.90 | **−0.58%** | 0.42% | −0.09% | +0.22% | −0.36% |
+
+**It starts near zero and stays near zero.** The hypothesis predicted it should become
+positive as the model learns to exploit the positional structure of the reverse
+recurrence. The fitted slopes are ~0 and two of three are negative. For scale, the
+within-arm step-to-step evaluation noise on arm A is 0.5–0.8 percentage points — the
+*same magnitude as the differences* — so B and C are statistically indistinguishable
+throughout, and B never gets ahead.
+
+### Cost
+
+| arm | tok/s | s/step | peak unified | wall |
+|---|---|---|---|---|
+| A causal | **191.1** | 0.670 | 11.65 GB | 565 s |
+| B aligned | 151.1 | 0.847 | 12.14 GB | 698 s |
+| C shuffled | 132.3 | 0.968 | 12.15 GB | 814 s |
+| D FLARE | 156.6 | 0.817 | 11.95 GB | 700 s |
+
+### Verdict against the pre-registered criteria (unmodified)
+
+- Mean lift over t ≥ 0.50: **B −22.17% vs A −21.11% → margin −1.06 points.**
+  Required ≥ +3.00. **NOT MET.**
+- B beats A at both t = 0.50 and t = 0.75 individually: **False** (B loses at every
+  level).
+- Aligned − shuffled at t ≥ 0.50: **−0.41 points.** The kill criterion — "shuffled
+  remains competitive with real fusion after training" — **FIRES**.
+
+**Conclusion: the aligned dual-recurrence mechanism does not earn its 1.26× wall-clock
+cost.** On this evidence the reverse pass supplies a perturbation, not position-aligned
+information, exactly as the zero-training probe in
+[BIDIRECTIONAL_DELTANET.md](BIDIRECTIONAL_DELTANET.md) predicted.
+
+FLARE's block-end readout (D) also failed to beat A here. That is **not** evidence
+against FLARE — arm D is a mechanism transplant under our objective, our uniform
+corruption and our data, none of which are FLARE's; see
+[FLARE_COMPARISON.md](FLARE_COMPARISON.md).
+
+### The honest caveat: this comparison had low power
+
+Every arm is in a degenerate regime and the run must not be read as "denoising works,
+and mechanism X is best". Specifically:
+
+- Held-out **lift over copy is strongly negative at low noise** for every arm (≈ −83%
+  at t = 0.10). A pure copier would score ~90% identity accuracy at t = 0.10; these
+  models score ~7%. They are *destroying clean tokens*.
+- **Copy rate is ~3.5%** and corrupted-position accuracy is ~6–7% and **essentially
+  flat across all noise levels**, which is the signature of a model that has stopped
+  conditioning on the canvas and is emitting a generic prefix-conditioned guess.
+- Training **plateaued by step ~250**: cross entropy fell 8.29 → 6.55 and then stopped.
+
+So the arms were compared while all of them were weak. Two things follow, and both
+matter:
+
+1. The **relative** comparison is still valid and is what the criteria were written
+   against — matched data, matched seeds, matched steps, matched capacity. B lost.
+2. The **absolute** result says this configuration cannot learn generalising discrete
+   denoising: rank-16 LoRA on 8 attention layers, 600 steps × batch 4 = 2,400 examples,
+   is far too little for a model to relearn an unshifted readout convention on real
+   text. v0.1 already showed capacity matters (experiment 003 vs 004), and this run
+   used the *lower*-capacity setting.
+
+A properly powered rerun would need, roughly in order of expected effect: more adapter
+capacity (`full_attention + mlp`, and `deltanet` for arms B/C/D so the reverse pass is
+adaptable at all), many more steps, and plausibly `corruption: mask` — v0.1 experiment
+001 showed uniform corruption makes the task ill-posed because corrupted positions are
+unidentifiable, and FLARE uses masking. **That rerun is a new experiment with new
+pre-registered criteria, not a re-roll of this one.** The criteria above fired and are
+not being reopened.
+
+Note also FLARE's own reported finding, which anticipated this: "the attainable
+transfer quality is governed primarily by the transfer data mix rather than by the
+algorithmic recipe." Our axis — recurrence and mask design — is the one they found had
+less headroom.
+
+### Arm E — the gate test: the model chooses to use *less* reverse information
+
+Arms B/C/D used `mean` fusion, which has **no gate**, so the gate kill criterion could
+not be evaluated from them. Arm E repeats arm B with `fusion: scalar_gate`
+(`gate_init = 0.95`, one learned scalar per DeltaNet layer, 24 trainable scalars),
+everything else identical.
+
+`g = 1.0` is exactly the causal path; `g = 0.5` is mean fusion; lower `g` means more
+reverse information.
+
+| step | gate mean | gate min | gate max |
+|---|---|---|---|
+| 0 | 0.9500 | 0.9500 | 0.9500 |
+| 150 | 0.9518 | 0.9498 | 0.9529 |
+| 300 | 0.9526 | 0.9499 | 0.9540 |
+| 450 | 0.9530 | 0.9497 | 0.9547 |
+| **600** | **0.9533** | 0.9497 | **0.9553** |
+
+**The gate moved monotonically *away* from the reverse path** — 0.9500 → 0.9533 — and
+not one of the 24 layers moved meaningfully towards it (min 0.9497). Given a free
+parameter to decide how much of the reverse recurrence to admit, the model reduced it.
+
+Held-out at step 600: corrupted-position accuracy 6.00% / 6.15% / 6.99% at
+t = 0.50 / 0.75 / 0.90 — below arm A (6.84% / 6.70% / 7.32%), at 123 tok/s vs A's 191.
+
+**Pre-registered kill criterion "the learned gate converges back to g ≥ 0.9" — FIRES**
+(g = 0.9533).
+
+Two caveats stated for fairness: the gate drift is small in absolute terms (+0.0033),
+and it is a single scalar per layer trained for 600 steps in the same low-power regime
+as the rest of Phase 3. But its *direction* is unambiguous and consistent across all 24
+layers, and it agrees with every other measurement in this phase.
+
+### Phase 3 summary
+
+| arm | mechanism | t=0.50 | t=0.75 | t=0.90 | tok/s | verdict |
+|---|---|---|---|---|---|---|
+| **A** | causal + bidirectional full attention (v0.1) | **6.84%** | **6.70%** | **7.32%** | **191.1** | best on every axis |
+| B | aligned dual recurrence (v0.2) | 5.44% | 5.76% | 6.55% | 151.1 | loses, costs 1.26× |
+| C | shuffled-reverse control | 6.18% | 5.87% | 6.92% | 132.3 | indistinguishable from B |
+| D | FLARE-style block-end readout | 5.36% | 5.61% | 5.79% | 156.6 | loses (not a FLARE baseline) |
+| E | aligned + learned scalar gate | 6.00% | 6.15% | 6.99% | 123.1 | loses; gate moves away from reverse |
+
+**v0.2's hypothesis is not supported.** Three independent measurements agree: the
+aligned reverse recurrence does not beat its own position-shuffled control, does not
+beat the causal baseline, and is actively down-weighted when the model is given the
+choice.
