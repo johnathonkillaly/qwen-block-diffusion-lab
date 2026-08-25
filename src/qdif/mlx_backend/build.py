@@ -93,9 +93,10 @@ def build_mlx_setup(cfg: ExperimentConfig, echo=print) -> MLXSetup:
         gate_init=bcfg.gate_init,
         layer_indices=bcfg.layer_indices,
         enabled=bcfg.enabled,
+        mode=bcfg.mode,
     )
     echo(
-        f"[setup] bidirectional DeltaNet: enabled={bcfg.enabled} fusion={bcfg.fusion} "
+        f"[setup] DeltaNet: enabled={bcfg.enabled} mode={bcfg.mode} fusion={bcfg.fusion} "
         f"layers={bidi_report['num_wrapped']} fusion_params={bidi_report['fusion_params']:,}"
     )
 

@@ -101,24 +101,36 @@ class CanvasDataset:
         return iter(self.examples)
 
 
-def build_dataset(cfg, tokenizer, canvas_length: int) -> CanvasDataset:
-    """Construct the dataset described by a `DataConfig`."""
+def load_texts(cfg, split: str | None = None) -> list[str]:
+    """Raw texts for a split. `hf_dataset` may be `repo` or `repo:config`."""
     if cfg.source == "dev":
-        texts = DEV_TEXTS
-    elif cfg.source == "hf":
-        if not cfg.hf_dataset:
-            raise ValueError("data.source='hf' requires data.hf_dataset")
-        from datasets import load_dataset
-
-        ds = load_dataset(cfg.hf_dataset, split=cfg.hf_split)
-        texts = [r[cfg.text_field] for r in ds.select(range(min(len(ds), cfg.max_examples * 4)))]
-    else:
+        return list(DEV_TEXTS)
+    if cfg.source != "hf":
         raise ValueError(f"unknown data.source {cfg.source!r}, expected 'dev' or 'hf'")
+    if not cfg.hf_dataset:
+        raise ValueError("data.source='hf' requires data.hf_dataset")
 
+    from datasets import load_dataset
+
+    repo, _, name = cfg.hf_dataset.partition(":")
+    ds = load_dataset(repo, name or None, split=split or cfg.hf_split)
+    return [
+        r[cfg.text_field]
+        for r in ds
+        if len(r[cfg.text_field].strip()) >= cfg.min_chars
+    ]
+
+
+def build_dataset(
+    cfg, tokenizer, canvas_length: int, split: str | None = None, max_examples: int | None = None
+) -> CanvasDataset:
+    """Construct the dataset described by a `DataConfig`."""
+    texts = load_texts(cfg, split=split)
+    limit = max_examples if max_examples is not None else cfg.max_examples
     return CanvasDataset(
         texts=texts,
         tokenizer=tokenizer,
         prefix_length=cfg.prefix_length,
         canvas_length=canvas_length,
-        max_examples=cfg.max_examples,
+        max_examples=limit,
     )

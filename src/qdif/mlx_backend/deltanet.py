@@ -137,18 +137,54 @@ def deltanet_front_end(base, inputs: mx.array, mask: mx.array | None = None):
     return q, k, v, a, b, z
 
 
-def deltanet_recurrence(base, q, k, v, a, b, mask=None, use_kernel=False):
+def deltanet_recurrence(base, q, k, v, a, b, mask=None, use_kernel=False, return_state=False):
     """Step 4: the recurrence itself. Returns raw `y` of shape [B, S, Hv, Dv].
 
     `use_kernel=False` selects the ops path, which is the differentiable one; the
     fused Metal kernel is inference-only in mlx-lm (`use_kernel=not self.training`).
+
+    With `return_state=True` also returns the final recurrent state `[B, Hv, Dv, Dk]`,
+    which is what the FLARE-style block-end readout needs.
     """
     from mlx_lm.models.gated_delta import gated_delta_update
 
-    y, _ = gated_delta_update(
+    y, state = gated_delta_update(
         q, k, v, a, b, base.A_log, base.dt_bias, None, mask, use_kernel=use_kernel
     )
-    return y
+    return (y, state) if return_state else y
+
+
+def block_end_readout(base, state: mx.array, q: mx.array) -> mx.array:
+    """FLARE-style readout: every canvas position reads the completed block-end state.
+
+        o_i = S_end^T q_i          for every position i in the block
+
+    (FLARE arXiv:2606.01774v2, Eq. 6 and the surrounding text; see
+    docs/FLARE_COMPARISON.md.) The recurrence still runs strictly forward and is never
+    reversed -- block-wide visibility comes from every position reading the state
+    *after* the whole block has been absorbed.
+
+    This mirrors the per-step readout inside `_gated_delta_step_ops`
+    (`y = (state * q[..., None, :]).sum(-1)`) but with `state` held fixed at its
+    end-of-block value instead of advancing with `i`. `q` is used exactly as mlx-lm
+    scales it, so the pretrained scaling convention is preserved rather than
+    re-deriving FLARE's explicit 1/sqrt(d_k).
+
+    Args:
+        state: [B, Hv, Dv, Dk] final recurrent state.
+        q: [B, C, Hk, Dk] queries for the canvas (pre-head-replication).
+    Returns:
+        [B, C, Hv, Dv]
+    """
+    Hv = state.shape[1]
+    Hk = q.shape[2]
+    if (repeat := Hv // Hk) > 1:
+        q = mx.repeat(q, repeat, axis=-2)
+    # einsum('bhvd,bchd->bchv') via matmul: [B,Hv,C,Dk] @ [B,Hv,Dk,Dv] -> [B,Hv,C,Dv]
+    q_h = q.transpose(0, 2, 1, 3).astype(mx.float32)  # [B, Hv, C, Dk]
+    s_t = state.transpose(0, 1, 3, 2).astype(mx.float32)  # [B, Hv, Dk, Dv]
+    out = q_h @ s_t  # [B, Hv, C, Dv]
+    return out.transpose(0, 2, 1, 3).astype(q.dtype)  # [B, C, Hv, Dv]
 
 
 # ----------------------------------------------------------------------- fusions
@@ -323,11 +359,16 @@ class BidirectionalGatedDeltaNet(nn.Module):
     parameters are the fusion module's (0 to 65k per layer).
     """
 
-    def __init__(self, base, fusion: Fusion, enabled: bool = True):
+    #: "fusion" -> v0.2 aligned forward/reverse fusion (or a control fusion)
+    #: "flare"  -> FLARE-style block-end state readout, no reverse pass at all
+    mode: str = "fusion"
+
+    def __init__(self, base, fusion: Fusion, enabled: bool = True, mode: str = "fusion"):
         super().__init__()
         self.base = base
         self.fusion = fusion
         self.bidirectional = enabled
+        self.mode = mode
         # Set per forward by the diffusion model; -1 means "no canvas, pure causal".
         self._canvas_start = -1
         self._capture: DirectionalOutputs | None = None
@@ -370,12 +411,26 @@ class BidirectionalGatedDeltaNet(nn.Module):
 
         # ---- forward direction: the pretrained computation, untouched -----------
         q, k, v, a, b, z = deltanet_front_end(base, inputs, mask)
-        h_f = deltanet_recurrence(base, q, k, v, a, b, mask, use_kernel=use_kernel)
+        need_state = self.mode == "flare" and self.bidirectional
+        h_f, end_state = deltanet_recurrence(
+            base, q, k, v, a, b, mask, use_kernel=use_kernel, return_state=True
+        ) if need_state else (
+            deltanet_recurrence(base, q, k, v, a, b, mask, use_kernel=use_kernel), None
+        )
 
         h_r = None
         h = h_f
         start = self._canvas_start
-        if self.bidirectional and 0 <= start < S:
+
+        if need_state and 0 <= start < S:
+            # FLARE-style: every canvas position reads the completed block-end state.
+            # The forward recurrence already ran through [clean prefix | noisy canvas],
+            # so `end_state` IS "initialised from the clean boundary state, then
+            # updated only with the noisy block" -- FLARE's construction for one block.
+            fused = block_end_readout(base, end_state, q[:, start:])
+            h = mx.concatenate([h_f[:, :start], fused], axis=1)
+
+        elif self.mode == "fusion" and self.bidirectional and 0 <= start < S:
             # ---- reverse direction: canvas only, zero initial state -------------
             canvas = inputs[:, start:]
             canvas_rev = mx.flip(canvas, axis=1)
@@ -404,6 +459,7 @@ def wrap_deltanet_layers(
     gate_init: float = 0.95,
     layer_indices: list[int] | None = None,
     enabled: bool = True,
+    mode: str = "fusion",
 ) -> dict:
     """Replace every (selected) `GatedDeltaNet` with a shared-weight bidirectional one.
 
@@ -430,6 +486,7 @@ def wrap_deltanet_layers(
             base,
             build_fusion(fusion, base.num_v_heads, base.head_v_dim, gate_init),
             enabled=enabled,
+            mode=mode,
         )
         layer.linear_attn = module
         wrapped.append(i)
@@ -443,6 +500,7 @@ def wrap_deltanet_layers(
         "gate_init": gate_init,
         "shared_weight_ids": shared_ids,
         "enabled": enabled,
+        "mode": mode,
     }
 
 
@@ -468,6 +526,19 @@ def set_bidirectional(model, enabled: bool) -> int:
         mod = getattr(layer, "linear_attn", None)
         if isinstance(mod, BidirectionalGatedDeltaNet):
             mod.bidirectional = enabled
+            n += 1
+    return n
+
+
+def set_mode(model, mode: str) -> int:
+    """Switch every wrapped DeltaNet between "fusion" (v0.2) and "flare" readout."""
+    if mode not in ("fusion", "flare"):
+        raise ValueError(f"unknown deltanet mode {mode!r}; expected 'fusion' or 'flare'")
+    n = 0
+    for layer in model.layers:
+        mod = getattr(layer, "linear_attn", None)
+        if isinstance(mod, BidirectionalGatedDeltaNet):
+            mod.mode = mode
             n += 1
     return n
 

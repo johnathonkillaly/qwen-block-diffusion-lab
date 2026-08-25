@@ -928,6 +928,145 @@ def cmd_smoke_bidir(args) -> int:
     return 0 if all_pass else 1
 
 
+def cmd_heldout(args) -> int:
+    """Phase 3: train one arm and track held-out denoising throughout."""
+    from .mlx_backend.heldout import run_arm
+
+    cfg = _load_cfg(args)
+    if cfg.training.backend != "mlx":
+        _echo("heldout requires training.backend: mlx")
+        return 1
+    arm = args.arm or cfg.run.name
+    _rule(f"Phase 3 held-out run: arm {arm}")
+    b = cfg.bidirectional_deltanet
+    _echo(f"  DeltaNet: enabled={b.enabled} mode={b.mode} fusion={b.fusion}")
+    _echo(f"  {cfg.training.max_steps} steps, batch {cfg.training.batch_size}, "
+          f"canvas {cfg.diffusion.canvas_length}, t in [{cfg.diffusion.t_min}, {cfg.diffusion.t_max}]")
+    summary = run_arm(cfg, arm=arm, echo=_echo)
+    _rule("arm summary")
+    _echo(f"  wall {summary['wall_seconds']:.0f}s | {summary['tokens_per_sec']:.1f} tok/s "
+          f"| peak {summary['peak_unified_gb']:.2f} GB unified")
+    for key, p in summary["final"].items():
+        _echo(f"  {key:<10} corr-acc {p['corrupted_accuracy']:6.2%} "
+              f"lift {p['lift_over_copy']:+6.2%} ce {p['loss']:6.3f} "
+              f"exact {p['exact_reconstruction']:5.1%}")
+    return 0
+
+
+def cmd_p3_report(args) -> int:
+    """Compare Phase 3 arms and apply the pre-registered criteria."""
+    import numpy as np
+
+    runs = {}
+    for spec in args.runs:
+        arm, _, path = spec.partition("=")
+        p = Path(path or f"runs/p3-{arm}")
+        curve = p / "heldout_curve.jsonl"
+        if not curve.exists():
+            _echo(f"missing {curve}")
+            return 1
+        rows = [json.loads(line) for line in curve.read_text().splitlines() if line.strip()]
+        summ = json.loads((p / "summary.json").read_text()) if (p / "summary.json").exists() else {}
+        runs[arm] = {"rows": rows, "summary": summ}
+
+    steps = sorted({r["step"] for r in runs[next(iter(runs))]["rows"]})
+    final = max(steps)
+
+    def get(arm, step, t, key="corrupted_accuracy"):
+        for r in runs[arm]["rows"]:
+            if r["step"] == step and abs(r["t"] - t) < 1e-9:
+                return r[key]
+        return None
+
+    _rule("held-out corrupted-position accuracy at the final step")
+    levels = sorted({r["t"] for r in runs[next(iter(runs))]["rows"] if r["step"] == final})
+    _echo("  " + f"{'arm':<14}" + "".join(f"{f't={t:.2f}':>11}" for t in levels))
+    for arm in runs:
+        _echo("  " + f"{arm:<14}" + "".join(
+            f"{(get(arm, final, t) or float('nan')):>11.2%}" for t in levels))
+
+    _rule("held-out lift over copy at the final step")
+    _echo("  " + f"{'arm':<14}" + "".join(f"{f't={t:.2f}':>11}" for t in levels))
+    for arm in runs:
+        _echo("  " + f"{arm:<14}" + "".join(
+            f"{(get(arm, final, t, 'lift_over_copy') or float('nan')):>+11.2%}" for t in levels))
+
+    _rule("cross entropy at the final step")
+    _echo("  " + f"{'arm':<14}" + "".join(f"{f't={t:.2f}':>11}" for t in levels))
+    for arm in runs:
+        _echo("  " + f"{arm:<14}" + "".join(
+            f"{(get(arm, final, t, 'loss') or float('nan')):>11.3f}" for t in levels))
+    _echo("  NOTE: t=1.00 measures the prior, not denoising -- at full corruption the")
+    _echo("  particular held-out continuation is not identifiable from the canvas.")
+
+    if "B" in runs and "C" in runs:
+        _rule("aligned - shuffled  (corrupted-position accuracy) over training")
+        _echo("  This is the measurement the v0.2 hypothesis lives or dies on.")
+        _echo("  " + f"{'step':>6}" + "".join(f"{f't={t:.2f}':>11}" for t in TRACKED))
+        for s in steps:
+            row = "".join(
+                f"{((get('B', s, t) or 0) - (get('C', s, t) or 0)):>+11.2%}" for t in TRACKED
+            )
+            _echo(f"  {s:>6}{row}")
+
+    _rule("gate behaviour / cost")
+    _echo("  " + f"{'arm':<14}{'gate':>8}{'tok/s':>10}{'s/step':>9}{'peak GB':>10}{'wall s':>9}")
+    for arm, d in runs.items():
+        s = d["summary"]
+        g = s.get("gates", {}).get("gate_mean")
+        _echo("  " + f"{arm:<14}{(f'{g:.3f}' if g is not None else '--'):>8}"
+              f"{s.get('tokens_per_sec', float('nan')):>10.1f}"
+              f"{s.get('mean_seconds_per_step', float('nan')):>9.3f}"
+              f"{s.get('peak_unified_gb', float('nan')):>10.2f}"
+              f"{s.get('wall_seconds', float('nan')):>9.0f}")
+
+    if "A" in runs and "B" in runs:
+        _rule("PRE-REGISTERED CRITERIA (docs/EXPERIMENTS.md, fixed before the run)")
+        hi = [t for t in levels if t >= 0.50 - 1e-9 and t < 1.0]
+        lift_b = np.mean([get("B", final, t, "lift_over_copy") for t in hi])
+        lift_a = np.mean([get("A", final, t, "lift_over_copy") for t in hi])
+        margin = (lift_b - lift_a) * 100
+        wins = all(
+            (get("B", final, t) or 0) > (get("A", final, t) or 0) for t in (0.50, 0.75)
+        )
+        _echo(f"  mean lift over t>=0.50 : B {lift_b:+.2%} vs A {lift_a:+.2%} "
+              f"-> margin {margin:+.2f} points (need >= +3.00)")
+        _echo(f"  B beats A at BOTH t=0.50 and t=0.75 individually: {wins}")
+        gate = runs["B"]["summary"].get("gates", {}).get("gate_mean")
+        if gate is not None:
+            _echo(f"  learned gate mean: {gate:.3f} (kill if >= 0.900)")
+        cont = margin >= 3.0 and wins
+        tie = abs(margin) <= 1.0
+        _echo("")
+        if cont:
+            _echo("  VERDICT: CONTINUE v0.2 -- criterion met.")
+        elif tie:
+            _echo("  VERDICT: CONTINUE v0.1 -- A is within 1 point of B. The 1.2x compute")
+            _echo("  and the extra machinery are not worth a tie.")
+        else:
+            _echo("  VERDICT: v0.2 continue criterion NOT met.")
+        if "C" in runs:
+            d_bc = np.mean([
+                (get("B", final, t) or 0) - (get("C", final, t) or 0) for t in hi
+            ]) * 100
+            _echo(f"  aligned - shuffled at t>=0.50: {d_bc:+.2f} points")
+            if d_bc <= 0:
+                _echo("  KILL CRITERION FIRES: the shuffled control is not worse than aligned")
+                _echo("  fusion after training, so the reverse pass is a perturbation, not")
+                _echo("  position-aligned information.")
+
+    if args.json_out:
+        Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.json_out).write_text(json.dumps(
+            {a: {"summary": d["summary"], "rows": d["rows"]} for a, d in runs.items()},
+            indent=2, default=str))
+        _echo(f"\n  wrote {args.json_out}")
+    return 0
+
+
+TRACKED = (0.50, 0.75, 0.90)
+
+
 def cmd_compare_fusion(args) -> int:
     """Untrained loss per fusion strategy, plus the gate sweep that de-confounds it."""
     from .mlx_backend.build import build_mlx_setup
@@ -1129,6 +1268,17 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--probe-layer", type=int, default=None, help="DeltaNet layer to probe")
     sp.add_argument("--json-out", default=None)
     sp.set_defaults(func=cmd_smoke_bidir, steps=None, max_steps=None)
+
+    sp = common(sub.add_parser("heldout", help="Phase 3: train one arm, track held-out denoising"))
+    sp.add_argument("--arm", default=None, help="label for this arm (A/B/C/D)")
+    sp.add_argument("--max-steps", type=int, default=None)
+    sp.set_defaults(func=cmd_heldout, steps=None)
+
+    sp = common(sub.add_parser("p3-report", help="compare Phase 3 arms against the frozen criteria"))
+    sp.add_argument("--runs", nargs="+", required=True,
+                    help="arm=path pairs, e.g. A=runs/p3-A-causal B=runs/p3-B-aligned")
+    sp.add_argument("--json-out", default=None)
+    sp.set_defaults(func=cmd_p3_report, steps=None, max_steps=None)
 
     sp = common(sub.add_parser("compare-fusion", help="untrained loss per fusion strategy + gate sweep"))
     sp.add_argument("--noise-levels", type=float, nargs="+", default=[0.1, 0.25, 0.5, 0.75, 0.9])

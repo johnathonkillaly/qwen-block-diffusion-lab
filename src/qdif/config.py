@@ -98,7 +98,14 @@ class BidirectionalDeltaNetConfig:
     #: DeltaNet. Setting this False is not implemented -- a 4B backbone must not
     #: silently become an 8B backbone.
     share_base_weights: bool = True
-    #: "mean" | "scalar_gate" | "token_gate" | "concat_proj"
+    #: "fusion" -> our aligned forward/reverse dual recurrence (the v0.2 hypothesis).
+    #: "flare"  -> FLARE-style block-end recurrent-state readout (arXiv:2606.01774v2):
+    #:            no reverse pass; every canvas position reads the completed block-end
+    #:            state. A mechanism transplant, NOT a FLARE baseline -- see
+    #:            docs/FLARE_COMPARISON.md.
+    mode: str = "fusion"
+    #: "mean" | "scalar_gate" | "token_gate" | "concat_proj", plus the controls
+    #: "forward_scaled_control" | "shuffled_reverse_control". Ignored when mode='flare'.
     fusion: str = "mean"
     #: Initial value of the forward-path gate for the learned fusions. Close to 1.0
     #: means "start from the pretrained causal computation and learn to admit the
@@ -153,6 +160,13 @@ class DataConfig:
     source: str = "dev"
     hf_dataset: str | None = None
     hf_split: str = "train"
+    #: Held-out split. For wikitext this is a DIFFERENT SET OF ARTICLES, so the
+    #: held-out claim is document-disjoint, not merely window-disjoint.
+    eval_split: str = "test"
+    eval_max_examples: int = 128
+    #: Minimum characters for a paragraph to be used at all (wikitext has many
+    #: near-empty lines and bare section headers).
+    min_chars: int = 200
     text_field: str = "text"
     prefix_length: int = 16
     max_examples: int = 64

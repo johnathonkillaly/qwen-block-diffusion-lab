@@ -378,3 +378,99 @@ def test_set_canvas_start_reaches_every_layer(mlx_setup):
     n = set_canvas_start(mlx_setup.model.base_model, 5)
     assert n == len(mlx_setup.load_report.linear_attention_layers)
     assert all(m._canvas_start == 5 for _, m in deltanet_modules(mlx_setup.model.base_model))
+
+
+# ------------------------------------------------- FLARE block-end state readout
+
+
+def test_block_end_readout_shape_and_head_replication():
+    """q has Hk heads, the state has Hv; the readout must replicate q like the
+    recurrence does (Qwen3.5-4B has Hv/Hk = 2)."""
+    from qdif.mlx_backend.deltanet import block_end_readout
+
+    Bn, Cn, Hk, Hv, Dk, Dv = 2, 5, 4, 8, 16, 16
+    state = mx.random.normal((Bn, Hv, Dv, Dk))
+    q = mx.random.normal((Bn, Cn, Hk, Dk))
+    out = block_end_readout(None, state, q)
+    assert out.shape == (Bn, Cn, Hv, Dv)
+
+
+def test_block_end_readout_matches_the_reference_contraction():
+    """Must equal the same contraction the per-step readout uses, with the state
+    held fixed: y_i = (S * q_i[..., None, :]).sum(-1)."""
+    from qdif.mlx_backend.deltanet import block_end_readout
+
+    Bn, Cn, H, Dk, Dv = 1, 4, 3, 6, 6
+    state = mx.random.normal((Bn, H, Dv, Dk))
+    q = mx.random.normal((Bn, Cn, H, Dk))
+    got = block_end_readout(None, state, q)
+    for i in range(Cn):
+        ref = (state.astype(mx.float32) * q[:, i][..., None, :].astype(mx.float32)).sum(axis=-1)
+        assert mx.allclose(got[:, i].astype(mx.float32), ref, atol=1e-4)
+
+
+def test_block_end_readout_is_position_invariant_given_equal_queries():
+    """FLARE's state is shared across the block, so two positions with identical
+    queries must produce identical outputs. This is the structural difference from
+    our per-position reverse summary."""
+    from qdif.mlx_backend.deltanet import block_end_readout
+
+    state = mx.random.normal((1, 2, 4, 4))
+    q = mx.random.normal((1, 1, 2, 4))
+    q2 = mx.concatenate([q, q], axis=1)
+    out = block_end_readout(None, state, q2)
+    assert mx.allclose(out[:, 0], out[:, 1], atol=1e-6)
+
+
+@model_test
+def test_flare_mode_differs_from_causal_and_from_fusion(mlx_setup):
+    from qdif.mlx_backend.deltanet import set_mode
+
+    model = mlx_setup.model
+    model.train()
+    _, mod = deltanet_modules(model.base_model)[0]
+    P = 8
+    x = mx.random.normal((1, 24, mlx_setup.load_report.hidden_size)).astype(mx.bfloat16)
+    mod.set_canvas(P)
+
+    mod.bidirectional = False
+    causal = mod(x)
+    mod.bidirectional = True
+    mod.mode = "fusion"
+    fusion = mod(x)
+    mod.mode = "flare"
+    flare = mod(x)
+    mx.eval(causal, fusion, flare)
+
+    assert not bool(mx.array_equal(flare, causal)), "flare readout must change the canvas"
+    assert not bool(mx.array_equal(flare, fusion)), "flare must differ from dual-recurrence fusion"
+    # And it must respect the same leakage boundary.
+    assert bool(mx.array_equal(flare[:, :P], causal[:, :P])), "flare leaked into the prefix"
+    mod.mode = "fusion"
+
+
+@model_test
+def test_flare_mode_gives_every_canvas_position_block_wide_visibility(mlx_setup):
+    """Perturbing the LAST canvas token must move EARLIER canvas positions, because
+    they all read the block-end state."""
+    model = mlx_setup.model
+    model.train()
+    _, mod = deltanet_modules(model.base_model)[0]
+    P = 8
+    h = mlx_setup.load_report.hidden_size
+    x = mx.random.normal((1, 24, h)).astype(mx.bfloat16)
+    edited = np.asarray(x.astype(mx.float32)).copy()
+    edited[:, -1, :] += 3.0
+    x2 = mx.array(edited).astype(mx.bfloat16)
+
+    mod.set_canvas(P)
+    mod.bidirectional = True
+    mod.mode = "flare"
+    a, b = mod(x), mod(x2)
+    mx.eval(a, b)
+    mod.mode = "fusion"
+
+    earlier = float(mx.abs((a[:, P:-1] - b[:, P:-1]).astype(mx.float32)).max())
+    prefix = float(mx.abs((a[:, :P] - b[:, :P]).astype(mx.float32)).max())
+    assert earlier > 0.0, "block-end readout carried nothing backwards"
+    assert prefix == 0.0, "block-end readout leaked into the prefix"
