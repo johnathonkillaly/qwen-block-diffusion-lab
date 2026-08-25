@@ -223,7 +223,7 @@ torch numbers above are **historical reference only** — different framework,
 different model. The controlled comparison is ablation **A vs B**, both inside MLX
 on the same 4B checkpoint, differing by one boolean.
 
-**Model.** `unsloth/Qwen3.5-4B-Base`, BF16, from `/Volumes/SHUTTLE`. 32 layers,
+**Model.** `unsloth/Qwen3.5-4B-Base`, BF16, from a local model cache. 32 layers,
 8 full-attention at [3,7,11,15,19,23,27,31], 24 Gated DeltaNet, hidden 2560, vocab
 248,320, tied embeddings, `linear_num_value_heads/num_key_heads = 2` — so the
 DeltaNet head-replication path that was **dead code at 0.8B** is live here.

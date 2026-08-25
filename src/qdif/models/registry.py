@@ -1,9 +1,13 @@
-"""Local Qwen checkpoint discovery.
+"""Local checkpoint discovery.
 
-Scans the places this machine actually keeps models -- the HF hub cache, the
-`SHUTTLE` external drive, LM Studio's store -- so an experiment can run offline and
-so `qdif inspect` can tell the user what is already on disk before anything gets
-downloaded. Read-only: nothing here writes to or deletes a model directory.
+Scans the places a machine typically keeps models -- the Hugging Face hub cache, any
+mounted external volume, LM Studio's store -- so an experiment can run offline and so
+`qdif inspect` can report what is already on disk before anything is downloaded.
+
+Read-only: nothing here writes to or deletes a model directory.
+
+Set `QDIF_MODEL_ROOTS` (colon-separated) to add your own locations, or `HF_HOME` to
+point at a non-default cache.
 """
 
 from __future__ import annotations
@@ -13,17 +17,40 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+
+def _default_roots() -> list[Path]:
+    """Where to look for local checkpoints, in priority order.
+
+    Portable by construction: the HF cache (honouring `HF_HOME`), LM Studio's store,
+    any extra roots the user names in `QDIF_MODEL_ROOTS` (colon-separated), and every
+    mounted volume's common cache layouts. Nothing machine-specific is hard-coded --
+    this repository was developed with an external drive called SHUTTLE, and that name
+    should not leak into anyone else's setup.
+    """
+    roots: list[Path] = []
+    hf_home = os.environ.get("HF_HOME")
+    if hf_home:
+        roots += [Path(hf_home) / "hub", Path(hf_home) / "huggingface" / "hub"]
+    roots.append(Path.home() / ".cache" / "huggingface" / "hub")
+    for extra in filter(None, os.environ.get("QDIF_MODEL_ROOTS", "").split(":")):
+        roots.append(Path(extra))
+    volumes = Path("/Volumes")
+    if volumes.is_dir():
+        try:
+            for vol in sorted(volumes.iterdir()):
+                if not vol.is_dir():
+                    continue
+                for sub in ("huggingface/hub", "hub", "lmstudio-models", "mtplx-models",
+                            "omlx", "unsloth"):
+                    roots.append(vol / sub)
+        except OSError:
+            pass
+    roots.append(Path.home() / ".lmstudio" / "models")
+    return roots
+
+
 #: Roots searched for checkpoints, in priority order. Missing paths are skipped.
-SEARCH_ROOTS: list[Path] = [
-    Path.home() / ".cache" / "huggingface" / "hub",
-    Path("/Volumes/SHUTTLE/huggingface/hub"),
-    Path("/Volumes/SHUTTLE/hub"),
-    Path("/Volumes/SHUTTLE/lmstudio-models"),
-    Path("/Volumes/SHUTTLE/mtplx-models"),
-    Path("/Volumes/SHUTTLE/omlx"),
-    Path("/Volumes/SHUTTLE/unsloth"),
-    Path.home() / ".lmstudio" / "models",
-]
+SEARCH_ROOTS: list[Path] = _default_roots()
 
 _FORMAT_MARKERS = (
     ("gguf", ("*.gguf",)),

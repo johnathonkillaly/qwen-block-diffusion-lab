@@ -9,7 +9,8 @@ cd "$(dirname "$0")/.."
 
 CONFIG="${1:-configs/act3_smoke.yaml}"
 PY="${QDIF_PYTHON:-.venv-unsloth/bin/qdif}"
-export HF_HOME="${HF_HOME:-/Volumes/SHUTTLE}"
+# Point HF_HOME at your model cache if it is not the default ~/.cache/huggingface
+# export HF_HOME=/path/to/cache
 
 echo "=============================================================="
 echo " qdif smoke reproduction"

@@ -1,7 +1,7 @@
 # Migrating from Qwen3.5-0.8B/4B to Qwen3.8-27B
 
 Written after reading the actual local Qwen3.8-27B config
-(`/Volumes/SHUTTLE/hub/models--lmstudio-community--Qwen3.8-27B-MLX-8bit`) side by side
+(`models--lmstudio-community--Qwen3.8-27B-MLX-8bit`, a local MLX export) side by side
 with `Qwen/Qwen3.5-0.8B`. Nothing here is extrapolated from a model card.
 
 ## The headline

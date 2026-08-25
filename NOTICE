@@ -1,0 +1,13 @@
+Qwen Diffusion Lab (qdif)
+Copyright 2026 Johnathon Killaly
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+This product includes independently written implementations of methodological ideas
+described in "FLARE: Diffusion for Hybrid Language Model" (arXiv:2606.01774v2). No
+source code from the FLARE reference implementation was used. See THIRD_PARTY.md for
+the full attribution and dependency licence audit.

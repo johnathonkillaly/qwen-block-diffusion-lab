@@ -5,7 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qdif"
 version = "0.1.0"
-description = "Qwen Diffusion Lab: converting an autoregressive Qwen3.5 into a block-discrete diffusion LM via parameter-efficient adaptation. Experimental research harness."
+description = "Qwen Diffusion Lab: an Apple Silicon / MLX research lab on AR-to-diffusion conversion of Qwen3.5, including negative results and a FLARE-inspired reproduction."
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+keywords = ["diffusion-llm", "qwen", "mlx", "apple-silicon", "unsloth", "gated-deltanet"]
 requires-python = ">=3.11"
 dependencies = [
     "torch>=2.6",
@@ -21,6 +24,9 @@ dependencies = [
 
 [project.optional-dependencies]
 mlx = ["mlx>=0.29", "mlx-lm>=0.28"]
+# Optional. Provides the Qwen3.5 Gated DeltaNet custom VJP on Apple Silicon.
+# The harness runs without it -- see THIRD_PARTY.md for the licence discrepancy.
+unsloth = ["unsloth", "unsloth_zoo"]
 dev = ["pytest>=8", "pytest-timeout"]
 
 [project.scripts]

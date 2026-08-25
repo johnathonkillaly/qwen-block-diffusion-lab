@@ -12,7 +12,7 @@
 
 model:
   id: unsloth/Qwen3.5-4B-Base
-  local_path: /Volumes/SHUTTLE/hub/models--unsloth--Qwen3.5-4B-Base/snapshots/61541fe4aed37b6a1e615edd5cbf5a3f660312b1
+  local_path: null          # resolved from local caches by repo id; set HF_HOME or QDIF_MODEL_ROOTS
   local_files_only: true
   text_only: true
 

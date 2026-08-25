@@ -1,191 +1,191 @@
-# Qwen Diffusion Lab (`qdif`)
+# Qwen Diffusion Lab
 
-**Experimental research.** This repository investigates converting an autoregressive
-Qwen model into a block-discrete diffusion language model using parameter-efficient
-adaptation. It is not an official Qwen, Google, MLX, or Unsloth project.
+A local research lab exploring how an autoregressive **Qwen3.5** model can be adapted
+into a **block-diffusion** language model on **Apple Silicon**, using MLX and Unsloth.
 
-The question is narrow and falsifiable: **can LoRA plus a few small auxiliary modules
-teach a pretrained autoregressive Qwen3.5 a second generation mode — iterative
-discrete denoising over a token canvas — without disturbing the first?**
+It is an honest implementation notebook, not a benchmark paper. Failed hypotheses,
+aborted runs and a mis-specified success criterion are all kept in, because the point
+is to understand the transition:
 
-Milestone 1 is not model quality. It is a harness that can load the model, corrupt a
-canvas, run a diffusion forward pass, compute a valid loss, push gradients into
-adapters only, iteratively denoise, compare against an autoregressive control, and
-record enough diagnostics to tell whether the idea is working.
+> autoregressive Qwen  ⟶  Qwen capable of block diffusion
+
+**Not affiliated with** Qwen/Alibaba, Unsloth, Apple, Google, or the FLARE authors. No
+novel architecture is claimed. Act III is a local, small-scale reproduction of ideas
+from a published paper — **not** a reproduction of its benchmark numbers.
 
 ---
 
-## v0.2 — bidirectional Gated DeltaNet (branch `experiment/bidirectional-deltanet`)
+## What happened
 
-v0.2 moves to **Qwen3.5-4B-Base** on the **Unsloth** engine and asks whether the
-pretrained causal DeltaNet recurrence can be run in *both* directions over the canvas
-with shared weights, fusing the two directional representations.
+### Act I — Can Qwen denoise?
+Discrete-denoising plumbing works, and LoRA can overfit a reconstruction task. But
+several apparently successful runs were **copy collapse**: loss fell 5×, identity
+accuracy hit 96.9%, and the model had learned only to echo its input — identity
+accuracy tracked the copy baseline to the decimal. The instrumentation was rewritten
+(`lift_over_copy`, `corrupted_accuracy`) so that could not happen again. A later run
+then **corrected an earlier conclusion**: copy collapse is a transient the optimiser
+passes through, not a terminal state. With no AR term in the objective, autoregressive
+ability was destroyed (perplexity 8.06 → 115.87).
 
-Architecture smoke test: **12/12 pass.** Weights shared by object identity (4B stays
-4B), the reverse recurrence demonstrably carries information backwards (0/15 earlier
-positions move under causal, 15/15 under bidirectional), and the leakage boundary
-holds exactly (0 prefix positions move in either condition). Cost: **1.23×** forward,
-**1.19×** forward+backward.
+### Act II — Bidirectional recurrent diffusion
+Qwen3.5's Gated DeltaNet is **causal by construction**, not by masking: a causal
+depthwise conv feeds a recurrence with `tril`/`triu` baked in. We built a shared-weight
+reverse recurrence — same 4B parameters evaluated twice — verified backward information
+flow (0/15 earlier positions move under the native recurrence, 15/15 with ours) and
+proved no prefix leakage.
 
-**Phase 3 (held-out wikitext-2) settled it: the hypothesis is not supported.** The
-aligned dual recurrence loses to the causal v0.1 baseline at every noise level while
-costing 1.26x; the aligned-minus-shuffled gap stays at zero throughout training instead
-of becoming positive; and a learned gate moves *away* from the reverse path in all 24
-layers. The pre-registered continue criterion failed and two kill criteria fired. Full
-numbers in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
+Then it lost. Against pre-registered criteria it failed to beat the causal baseline, it
+never beat its own **position-shuffled** control, and when given a learned gate all 24
+layers moved *away* from the reverse path. Hypothesis rejected and retired.
+[Details](docs/BIDIRECTIONAL_DELTANET.md).
 
-An honest caveat travels with that: every arm sat in a low-power regime where none
-learned generalising denoising (training plateaued by step 250, lift over copy ~-83%
-at t=0.10). The *relative* comparison the criteria were written against is valid; the
-*absolute* numbers say this capacity/step budget cannot learn the task.
+### Act III — Reproducing a known-good method
+A FLARE-inspired transfer: combined `L_AR + λ·L_diff`, absorbing-state `[MASK]`
+corruption instead of random-token corruption, complementary mask views, and Gated
+DeltaNet block-end state scheduling. Run 1 aborted at step 125 when the
+canvas-conditioning probe collapsed — the timestep conditioner's bias had grown to 20×
+the token-embedding norm and swamped the canvas. Fixed, and run 2 worked.
 
-**The earlier zero-training measurement was also negative.** With zero training, a
-position-**shuffled** reverse control matches or beats correctly-aligned reverse
-fusion at every gate value. So the untrained loss improvement is not backward
-positional information — it is an unstructured perturbation of the autoregressive
-readout. The one-batch overfit test cannot arbitrate: at 4B it saturates, with the
-causal and bidirectional configs both hitting loss ~1e-4 and 100% corrupted-position
-accuracy.
+---
 
-Held-out training is the only thing that can decide, and the kill/continue criteria
-are recorded **before** that run in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
+## Findings
 
-Two Unsloth findings worth knowing: on Apple silicon Unsloth **is** an MLX stack
-(`DEVICE_TYPE == "mlx"`), and it ships a Qwen3.5-specific GatedDeltaNet custom VJP
-that v0.2 runs on. Unsloth **Studio** cannot own this training loop — its
-`/api/train/start` has a closed SFT schema with no custom-loss hook. Details:
-[docs/UNSLOTH_BACKEND.md](docs/UNSLOTH_BACKEND.md),
-[docs/BIDIRECTIONAL_DELTANET.md](docs/BIDIRECTIONAL_DELTANET.md).
+Held-out WikiText-103 validation, Qwen3.5-4B-Base, 2500 steps, 148 min, 21.1 GB unified:
+
+| | step 0 | step 2500 |
+|---|---|---|
+| masked-position accuracy @ t=0.10 | 1.4% | **58.2%** |
+| masked-position accuracy @ t=0.50 | 1.6% | **41.8%** |
+| masked-position accuracy @ t=0.90 | 0.8% | **13.0%** |
+| canvas-conditioning probe (L1) | 1.62 | **1.86** |
+| AR reference perplexity | 8.91 | **5.11** |
+
+- **It denoises unseen text**, with strong noise dependence. Act II's pathology was a
+  flat ~6–7% regardless of `t`; this is 58% → 13% across the noise range.
+- **The AR path got better, not worse** (perplexity 8.91 → 5.11) — the combined
+  objective fixes the Act I/II collapse.
+- **It is an infiller, not yet a generator.** From a *fully masked* canvas it produces
+  high-frequency repetition. Masked accuracy at t=1.00 is only 5.37%.
+- **6 of 7 pre-registered criteria passed**, so by its own written definition Act III is
+  recorded as a **failure**. The one that failed — visible-token preservation — turned
+  out to be mis-specified for absorbing-state diffusion. We did not rewrite it.
+
+Full picture, including everything we **cannot** claim: **[FINDINGS.md](FINDINGS.md)**.
+
+---
+
+## Reproduce
+
+Requires an Apple Silicon Mac (see [Hardware](#hardware)) and ~9 GB for the checkpoint.
 
 ```bash
-HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/qdif smoke-bidir -c configs/v02_B_mean_fusion.yaml
+uv venv --python 3.13 .venv-unsloth && VIRTUAL_ENV=.venv-unsloth uv pip install -e ".[mlx,dev]" unsloth
 ```
 
-## Status (v0.1, Qwen3.5-0.8B / torch)
+Five-minute end-to-end smoke reproduction — capability report, 15 milestone checks, a
+short transfer run, and a diffusion trace:
 
-| Component | State |
+```bash
+./scripts/reproduce_smoke.sh
+```
+
+The full Act III experiment (~2.5 h on an M4 Max):
+
+```bash
+HF_HOME=/path/to/model/cache .venv-unsloth/bin/qdif act3-train -c configs/act3_main.yaml
+```
+
+Watch a masked canvas resolve, one denoising step at a time:
+
+```bash
+.venv-unsloth/bin/qdif generate-trace --checkpoint runs/act3-main/checkpoint --prompt "The rain had stopped by morning" --steps 16
+```
+
+Verify what the backend is actually doing, rather than trusting that it is:
+
+```bash
+.venv-unsloth/bin/qdif unsloth-report
+```
+
+Other commands: `qdif inspect`, `arch-report`, `corrupt`, `act3-check`, `probe-bidir`,
+`act3-compare`, `p3-report`, `memory`.
+
+---
+
+## Hardware
+
+| | |
 |---|---|
-| Qwen3.5 text-only loading, architecture introspection | working |
-| Bidirectional canvas mask injection (no monkeypatching) | working, empirically verified |
-| Uniform discrete corruption + schedules | working, exactly reproducible |
-| x0-prediction objective + anti-self-deception metrics | working |
-| LoRA (layer-index targeting, runtime enable/disable) | working |
-| torch / Apple MPS trainer | working |
-| Iterative denoising sampler, block-autoregressive generation | working |
-| AR control on identical weights | working |
-| Checkpoint save/reload (adapters only) | working |
-| MLX **training** backend | **not implemented** — deliberate, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| Quantized (8-bit / 4-bit) training | **not implemented** on Apple silicon, see [docs/MEMORY.md](docs/MEMORY.md) |
-| **Does it learn to denoise?** | **Yes — on a one-batch memorisation test only.** See [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) |
-| **Does it generalise?** | **Unknown. Never trained on a corpus.** |
+| Developed on | Apple M4 Max, 128 GB unified memory |
+| Act III peak memory | **21.1 GB unified** (not VRAM — see below) |
+| Throughput | ~83 canvas tok/s, 3 forwards per step |
+| Full run | ~2.5 hours |
 
-### What is actually established
+Runs on smaller Macs with adjustment — 32 GB at `canvas_length: 64`, 24 GB at
+`canvas_length: 48` with `complementary_views: false`. Sizing table, MLX/Unsloth
+specifics, and how this differs from a CUDA recipe (no QLoRA, no Triton, no
+FlashAttention, no bitsandbytes): **[docs/APPLE_SILICON.md](docs/APPLE_SILICON.md)**.
 
-LoRA on the full-attention `q/k/v/o` projections — 2.4M trainable parameters, 0.32% of
-the model — takes Qwen3.5-0.8B from 0% to 95% accuracy on *corrupted* canvas positions
-in 150 steps, 31 points above what copying the input would score. With MLP targets and
-rank 32 it reaches 100% and loss 0.006. Meanwhile `next_token_accuracy` collapses from
-48% to ~0%: the model genuinely abandons autoregressive prediction.
+Apple unified memory is shared with the CPU and the OS and is **not** VRAM; we report
+it as unified memory throughout, and note that Metal caps a process at roughly 75% of
+installed RAM.
 
-**This is memorisation of two examples.** It proves the optimisation path exists and the
-harness is wired correctly. It says nothing about unseen text.
+---
 
-### Two findings worth reading before trusting any number here
+## Research journal
 
-1. **A falling loss and a rising accuracy are compatible with learning nothing.** The
-   first run "succeeded" at 60 steps with identity accuracy tracking the copy baseline
-   to the decimal — the model had learned to echo its input. `lift_over_copy` and
-   `corrupted_accuracy` exist because of it.
-2. **The AR path does not survive with adapters active.** Reference perplexity degrades
-   14.4x and greedy decoding repeats a single token — the exact consequence of teaching
-   the model an unshifted readout. AR and diffusion are a *toggle*, not coexistence.
+Chronological notes, including the wrong turns:
 
-## Install
-
-```bash
-uv venv --python 3.13 .venv && VIRTUAL_ENV=.venv uv pip install -e ".[dev,mlx]"
-```
-
-## Quick start
-
-```bash
-.venv/bin/qdif inspect
-```
-
-```bash
-.venv/bin/qdif corrupt --text "The cat sat on the mat." --t 0.5
-```
-
-```bash
-.venv/bin/qdif smoke-forward
-```
-
-```bash
-.venv/bin/qdif smoke-grad
-```
-
-```bash
-.venv/bin/qdif probe-bidir
-```
-
-```bash
-.venv/bin/qdif overfit-one-batch
-```
-
-## Commands
-
-| Command | Purpose |
-|---|---|
-| `qdif inspect` | Hardware, backends, local checkpoints, baseline servers, memory estimates |
-| `qdif arch-report` | Live introspection of the loaded Qwen3.5 module tree |
-| `qdif corrupt --text ... --t 0.5` | Per-token view of the forward noising process |
-| `qdif smoke-forward` | One diffusion forward pass, loss, and metrics |
-| `qdif smoke-grad` | Verify gradients reach LoRA and *only* LoRA |
-| `qdif probe-bidir` | Measure real information flow across the canvas |
-| `qdif overfit-one-batch` | The mandatory first experiment, with an honest verdict |
-| `qdif train -c configs/...` | Run a training experiment |
-| `qdif reconstruct --noise 0.5` | Reconstruction accuracy sweep across noise levels |
-| `qdif generate --prompt ... --steps 16` | Block-diffusion generation |
-| `qdif compare --prompt ...` | AR baseline vs diffusion on identical weights |
-| `qdif memory` | Detailed memory breakdown |
-
-## Model
-
-Development default is **`Qwen/Qwen3.5-0.8B`**, because it is already on this machine
-and is architecturally identical to Qwen3.5-4B in every respect this experiment
-depends on: the same 3:1 Gated-DeltaNet / full-attention hybrid, the same MTP head,
-the same 248,320-token vocabulary, the same separable vision tower. The stated 4B
-target lives in `configs/qwen35_4b_lora_torch.yaml` and needs a download.
-
-Nothing in the harness is tuned to 0.8B. The one thing 0.8B does **not** exercise is
-DeltaNet head-group replication (`linear_num_value_heads > linear_num_key_heads`),
-which is active at 27B — see [docs/QWEN38_MIGRATION.md](docs/QWEN38_MIGRATION.md).
-
-## Tests
-
-```bash
-.venv/bin/python -m pytest tests -q -m "not model"
-```
-
-```bash
-.venv/bin/python -m pytest tests -q -m model
-```
-
-95 checkpoint-free tests, 28 integration tests that skip automatically when no local
-Qwen3.5 checkpoint is present.
-
-## Documentation
-
-- [RESEARCH.md](RESEARCH.md) — the tracked research questions and what is known so far
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — code layout, backend strategy, seams
-- [docs/DIFFUSION_OBJECTIVE.md](docs/DIFFUSION_OBJECTIVE.md) — the math, and the readout convention
-- [docs/QWEN35_NOTES.md](docs/QWEN35_NOTES.md) — architecture findings, especially Gated DeltaNet
+- [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) — Acts I & II, run by run
+- [docs/ACT3_JOURNAL.md](docs/ACT3_JOURNAL.md) — Act III, including the aborted run 1
+- [RESEARCH.md](RESEARCH.md) — the tracked research questions and their current status
+- [docs/ACT3_OBJECTIVE.md](docs/ACT3_OBJECTIVE.md) — the exact objective, equations and tensor shapes
+- [docs/ACT3_CRITERIA.md](docs/ACT3_CRITERIA.md) — success criteria, committed before the run
+- [docs/QWEN35_NOTES.md](docs/QWEN35_NOTES.md) — architecture findings
+- [docs/BIDIRECTIONAL_DELTANET.md](docs/BIDIRECTIONAL_DELTANET.md) — the Act II hypothesis and its rejection
+- [docs/FLARE_COMPARISON.md](docs/FLARE_COMPARISON.md) — mechanism-by-mechanism comparison
+- [docs/UNSLOTH_BACKEND.md](docs/UNSLOTH_BACKEND.md) — what Unsloth does on Apple Silicon, verified
 - [docs/QWEN38_MIGRATION.md](docs/QWEN38_MIGRATION.md) — what changes at 27B
-- [docs/MEMORY.md](docs/MEMORY.md) — memory accounting on unified memory
-- [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) — the experiment log, including failures
 
-## Licence and provenance
+---
 
-The development corpus in `src/qdif/data/dev_corpus.py` is public-domain text
-(Austen 1813, Carroll 1865, Melville 1851) plus synthetic sentences written for this
-repository. No model weights, datasets, checkpoints or caches are committed.
+## Prior work
+
+- **FLARE: Diffusion for Hybrid Language Model** — Zhu, Shi, Ge, Tan, Xu, Zhu, Kuen,
+  Goswami, Jain, Chen, Tao, Gu. [arXiv:2606.01774](https://arxiv.org/abs/2606.01774).
+  Act III implements methodological ideas from this paper, independently, from the
+  published specification. Their reference implementation is PolyForm Noncommercial and
+  **no code was copied from it**.
+- **Qwen3.5** — the Qwen team, for the hybrid Gated-DeltaNet backbone.
+- **Gated DeltaNet** and the DeltaNet line of work.
+- **Unsloth** — Apple/MLX path and the Qwen3.5-specific Gated DeltaNet custom VJP.
+- **MLX / mlx-lm** — Apple.
+- **DiffusionGemma** — the original inspiration for attempting AR→diffusion conversion.
+
+Attribution and the full licence audit: **[THIRD_PARTY.md](THIRD_PARTY.md)**.
+
+---
+
+## Limitations
+
+Read these before drawing conclusions.
+
+- **Not a FLARE reproduction in the benchmark sense.** Much smaller scale, LoRA instead
+  of full-weight conversion, one 128-token block instead of `K` blocks of 4, WikiText-103
+  instead of their transfer mix, and **no logit shift** (the paper mentions one without
+  giving the formula in the sections we could read). FLARE itself reports that *data mix
+  dominates algorithmic recipe*, so absolute quality here says little about their method.
+- **Free generation does not work yet.** The Act III model infills; it does not generate
+  coherent blocks from scratch.
+- **No fluency evaluation.** Masked-position accuracy is not fluency, and no human or
+  benchmark evaluation was run.
+- **No speed claims.** The sampler is unoptimised research Python/MLX. Comparing it to
+  GGUF, llama.cpp or LM Studio would be meaningless, and we do not.
+- **Single seed, single machine.** No variance estimates across seeds.
+- **Nothing verified at 27B.** Analysis only.
+
+## Licence
+
+Code in this repository: **Apache-2.0** ([LICENSE](LICENSE)), chosen after the
+dependency audit in [THIRD_PARTY.md](THIRD_PARTY.md) rather than by default. Model
+weights, datasets and checkpoints are **not** included and carry their own licences.
