@@ -213,7 +213,7 @@ def configure_trainable(model, train_fusion: bool = True, train_conditioner: boo
         if n:
             unfrozen.append(f"fusion x{n}")
 
-    if train_conditioner and hasattr(model, "timestep_conditioner"):
+    if train_conditioner and getattr(model, "timestep_conditioner", None) is not None:
         model.timestep_conditioner.unfreeze(recurse=True)
         cond_params = count_parameters(model.timestep_conditioner.parameters())
         unfrozen.append("timestep_conditioner")

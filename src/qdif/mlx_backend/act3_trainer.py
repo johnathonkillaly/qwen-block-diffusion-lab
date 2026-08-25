@@ -176,6 +176,14 @@ def train_act3(cfg: ExperimentConfig, echo=print, dry_run: bool = False) -> dict
         if p.exists():
             p.unlink()
 
+    from ..provenance import write_run_metadata
+
+    write_run_metadata(
+        run_dir, cfg,
+        extra={"act3": {"mask_token_id": a3.mask_token_id,
+                        "train_tokens": a3.train_ds.total_tokens,
+                        "heldout_tokens": a3.eval_ds.total_tokens}},
+    )
     (run_dir / "setup.json").write_text(
         json.dumps(
             {

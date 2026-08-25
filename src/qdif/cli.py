@@ -928,6 +928,101 @@ def cmd_smoke_bidir(args) -> int:
     return 0 if all_pass else 1
 
 
+def _load_act3_model(cfg, checkpoint, echo=_echo):
+    from .mlx_backend.act3 import resolve_mask_token_id
+    from .mlx_backend.build import build_mlx_setup
+
+    setup = build_mlx_setup(cfg, echo=echo)
+    mask_id = resolve_mask_token_id(
+        setup.load_report.vocab_size, setup.tokenizer.vocab_size, cfg.diffusion.mask_token_id
+    )
+    if checkpoint:
+        from .mlx_backend.trainer import load_adapters
+
+        meta = load_adapters(setup.model, checkpoint)
+        echo(f"[checkpoint] {checkpoint} ({meta.get('loaded_tensors')} tensors, "
+             f"step {meta.get('step')})")
+    else:
+        echo("[checkpoint] none -- UNADAPTED base model; output will be incoherent")
+    return setup, mask_id
+
+
+def cmd_generate_trace(args) -> int:
+    """Watch a masked canvas resolve into language, one denoising step at a time."""
+    import mlx.core as mx
+
+    from .mlx_backend.mask_sampler import denoise_block, render
+
+    cfg = _load_cfg(args)
+    setup, mask_id = _load_act3_model(cfg, args.checkpoint)
+    tok = setup.tokenizer
+    C = args.canvas or cfg.diffusion.canvas_length
+    steps = args.steps or cfg.sampler.steps
+
+    prefix = mx.array([tok.encode(args.prompt)])
+    res = denoise_block(
+        setup.model, prefix, C, mask_id, steps=steps, temperature=args.temperature,
+        seed=cfg.training.seed,
+    )
+
+    _rule(f"diffusion trace: {steps} steps, canvas {C}")
+    _echo(f"PROMPT: {args.prompt}")
+    _echo("")
+    for st in res.steps:
+        if args.every > 1 and st.step % args.every and st.step != len(res.steps) - 1:
+            continue
+        _echo(f"--- step {st.step + 1}/{steps}  (masked {st.num_masked_before} -> "
+              f"{st.num_masked_before - st.num_committed_this_step}, "
+              f"top1 {st.mean_top1_prob:.3f}, entropy {st.mean_entropy:.2f})")
+        _echo("    " + render(tok, st.canvas_ids, mask_id)[:600])
+    _rule("final")
+    _echo("  " + render(tok, res.final_ids, mask_id)[:800])
+    _echo("")
+    _echo(f"  {res.forwards} forwards for {C} tokens = {res.tokens_per_forward:.2f} tok/forward")
+    _echo(f"  {res.seconds:.2f}s, peak {res.peak_unified_gb:.2f} GB unified")
+    _echo("  (research MLX path, unoptimised -- not comparable to GGUF/llama.cpp speed)")
+
+    if args.json_out:
+        Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.json_out).write_text(json.dumps(
+            {"prompt": args.prompt, "steps": [s.__dict__ for s in res.steps],
+             "final": render(tok, res.final_ids, mask_id)}, indent=2, default=str))
+        _echo(f"\n  wrote {args.json_out}")
+    return 0
+
+
+def cmd_act3_compare(args) -> int:
+    """Same checkpoint, both modes: AR decode vs iterative block diffusion."""
+    import mlx.core as mx
+
+    from .mlx_backend.mask_sampler import ar_generate, denoise_block, render
+
+    cfg = _load_cfg(args)
+    setup, mask_id = _load_act3_model(cfg, args.checkpoint)
+    tok = setup.tokenizer
+    C = args.canvas or cfg.diffusion.canvas_length
+    prefix = mx.array([tok.encode(args.prompt)])
+
+    _rule("PROMPT")
+    _echo(f"  {args.prompt}")
+
+    _rule("AR QWEN  (same weights, autoregressive readout)")
+    ar = ar_generate(setup.model, prefix, args.max_new_tokens, mask_id)
+    _echo("  " + tok.decode(ar["new_ids"]).replace("\n", "\\n")[:600])
+    _echo(f"  [{ar['backend']}]")
+
+    _rule("DIFFUSION QWEN  (same weights, iterative block denoising)")
+    for steps in args.step_list:
+        res = denoise_block(setup.model, prefix, C, mask_id, steps=steps)
+        _echo(f"  step budget {steps:>3}: " + render(tok, res.final_ids, mask_id)[:400])
+        _echo(f"      {res.tokens_per_forward:.2f} tok/forward, {res.seconds:.2f}s")
+    _rule("note")
+    _echo("  Both rows are the SAME checkpoint. tok/forward is the structural claim;")
+    _echo("  wall-clock here is an unoptimised research path and must not be compared")
+    _echo("  against GGUF / llama.cpp / LM Studio inference.")
+    return 0
+
+
 def cmd_act3_check(args) -> int:
     """Act III milestone: the 15 checks that gate the main transfer run."""
     from .mlx_backend.act3_check import run_check
@@ -1400,6 +1495,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--probe-layer", type=int, default=None, help="DeltaNet layer to probe")
     sp.add_argument("--json-out", default=None)
     sp.set_defaults(func=cmd_smoke_bidir, steps=None, max_steps=None)
+
+    sp = common(sub.add_parser("generate-trace", help="watch a masked canvas resolve, step by step"))
+    sp.add_argument("--prompt", required=True)
+    sp.add_argument("--checkpoint", default=None)
+    sp.add_argument("--steps", type=int, default=None)
+    sp.add_argument("--temperature", type=float, default=0.0)
+    sp.add_argument("--every", type=int, default=1, help="print every Nth step")
+    sp.add_argument("--json-out", default=None)
+    sp.set_defaults(func=cmd_generate_trace, max_steps=None)
+
+    sp = common(sub.add_parser("act3-compare", help="AR vs diffusion on the same checkpoint"))
+    sp.add_argument("--prompt", required=True)
+    sp.add_argument("--checkpoint", default=None)
+    sp.add_argument("--max-new-tokens", type=int, default=48)
+    sp.add_argument("--step-list", type=int, nargs="+", default=[4, 8, 16, 32, 48])
+    sp.set_defaults(func=cmd_act3_compare, steps=None, max_steps=None)
 
     sp = common(sub.add_parser("act3-check", help="Act III milestone: 15 checks before the transfer run"))
     sp.add_argument("--json-out", default=None)

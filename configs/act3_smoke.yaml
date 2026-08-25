@@ -29,9 +29,9 @@ training:
   weight_decay: 0.0
   max_grad_norm: 1.0
   warmup_steps: 50
-  max_steps: 2500
-  log_every: 25
-  save_every: 125          # also the held-out health-evaluation interval
+  max_steps: 30
+  log_every: 5
+  save_every: 15
   seed: 1234
   show_reconstruction: false
 
@@ -56,7 +56,7 @@ bidirectional_deltanet:
   train_reverse_lora: false
 
 diffusion:
-  canvas_length: 128       # one diffusion block per example
+  canvas_length: 64
   corruption: mask         # absorbing state
   mask_token_id: null      # auto: last model-vocab row, unreachable by the tokenizer
   schedule: uniform
@@ -81,12 +81,12 @@ data:
   hf_dataset: Salesforce/wikitext:wikitext-103-raw-v1
   hf_split: train
   eval_split: validation   # test kept untouched for a final report
-  eval_max_examples: 64
+  eval_max_examples: 8
   min_chars: 1
   text_field: text
   prefix_length: 64
-  max_examples: 20000      # packed windows of 192 tokens -> ~3.8M training tokens
+  max_examples: 400
 
 run:
-  name: act3-main
+  name: act3-smoke
   output_dir: runs

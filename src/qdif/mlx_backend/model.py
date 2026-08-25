@@ -52,18 +52,47 @@ def sinusoidal_features(t: mx.array, dim: int, max_period: float = 1.0e4) -> mx.
 
 class TimestepConditioner(nn.Module):
     """Additive noise-level bias on canvas hidden states. Zero-initialised output,
-    so at init the diffusion path is numerically identical to the AR path."""
+    so at init the diffusion path is numerically identical to the AR path.
 
-    def __init__(self, hidden_size: int, feature_dim: int = 256):
+    NORM BOUND -- added in Act III after this module caused a real failure.
+
+    In the first Act III run the bias grew to norm ~13-15 while Qwen3.5-4B token
+    embeddings have norm ~0.66, a 20x ratio. Because the bias is *added* to
+    `inputs_embeds` at canvas positions, it swamped the token embeddings and the
+    canvas contents became irrelevant: the canvas-conditioning probe collapsed from
+    1.517 to 0.016 within 125 steps. The learned bias was also nearly identical at
+    t=0.1/0.5/0.9, i.e. it was not encoding the timestep at all -- it had found a
+    degenerate "add a large constant to canvas positions" solution.
+
+    `max_relative_norm` hard-clips the bias norm to a fraction of the mean token
+    embedding norm, so this failure mode cannot recur silently. Set it to 0 to
+    disable the bound (the Acts I/II behaviour).
+
+    Note that under absorbing-state (mask) corruption this module is arguably
+    unnecessary: the noise level is directly observable from the number of [MASK]
+    tokens in the canvas, and FLARE's formulation carries no timestep embedding.
+    Act III therefore runs with `timestep_conditioning: false`.
+    """
+
+    def __init__(self, hidden_size: int, feature_dim: int = 256,
+                 max_relative_norm: float = 0.5, reference_norm: float = 1.0):
         super().__init__()
         self.feature_dim = feature_dim
+        self.max_relative_norm = max_relative_norm
+        self.reference_norm = reference_norm
         self.fc1 = nn.Linear(feature_dim, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc2.weight = mx.zeros_like(self.fc2.weight)
         self.fc2.bias = mx.zeros_like(self.fc2.bias)
 
     def __call__(self, t: mx.array) -> mx.array:
-        return self.fc2(nn.silu(self.fc1(sinusoidal_features(t, self.feature_dim))))[:, None, :]
+        raw = self.fc2(nn.silu(self.fc1(sinusoidal_features(t, self.feature_dim))))[:, None, :]
+        if self.max_relative_norm and self.max_relative_norm > 0:
+            budget = self.max_relative_norm * self.reference_norm
+            norm = mx.sqrt(mx.sum(raw.astype(mx.float32) ** 2, axis=-1, keepdims=True))
+            scale = mx.minimum(1.0, budget / mx.maximum(norm, 1e-6))
+            raw = raw * scale.astype(raw.dtype)
+        return raw
 
 
 class MLXDiffusionQwen(nn.Module):
@@ -71,8 +100,18 @@ class MLXDiffusionQwen(nn.Module):
         super().__init__()
         self.base_model = base_model
         self.cfg = cfg
+        # The norm bound is relative to the model's own mean token-embedding norm,
+        # measured once at construction -- see TimestepConditioner's docstring.
+        ref = 1.0
+        try:
+            emb = base_model.language_model.model.embed_tokens.weight
+            ref = float(mx.linalg.norm(emb.astype(mx.float32), axis=-1).mean())
+        except (AttributeError, RuntimeError):
+            pass
+        self.embedding_reference_norm = ref
         self.timestep_conditioner = (
-            TimestepConditioner(hidden_size) if cfg.timestep_conditioning else None
+            TimestepConditioner(hidden_size, reference_norm=ref)
+            if cfg.timestep_conditioning else None
         )
 
     # ------------------------------------------------------------------ helpers

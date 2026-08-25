@@ -66,7 +66,7 @@ diffusion:
   ar_weight: 1.0
   complementary_views: true
   exact_mask_count: true
-  timestep_conditioning: false   # FLARE has no timestep embedding; under MASK corruption the noise level is visible from the [MASK] count. Enabled it in run 1 and it caused canvas collapse -- see docs/ACT3_JOURNAL.md
+  timestep_conditioning: true    # ablation: bounded conditioner (max_relative_norm=0.5)
   self_conditioning: false
   bidirectional_canvas: true
 
@@ -88,5 +88,5 @@ data:
   max_examples: 20000      # packed windows of 192 tokens -> ~3.8M training tokens
 
 run:
-  name: act3-main
+  name: act3-abl-timestep
   output_dir: runs
