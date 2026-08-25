@@ -87,10 +87,15 @@ number enough to matter).
 
 ### Why `loss_on` is a first-class experimental knob
 
-Under **uniform** corruption with `loss_on: all`, *copying the input is a strong local
-optimum*. At noise level `t`, a fraction `1-t` of positions are already correct, the
+Under **uniform** corruption with `loss_on: all`, *copying the input is a strong
+attractor*. At noise level `t`, a fraction `1-t` of positions are already correct, the
 model cannot tell which ones those are, and echoing the input scores `1-t` for free.
-Experiment 001 fell straight into it. See [EXPERIMENTS.md](EXPERIMENTS.md).
+Experiment 001 landed squarely in it at 60 steps.
+
+It turned out to be a **transient**, not a terminal optimum: the same configuration run
+for 150 steps (experiment 004) escapes it and reaches 95% accuracy on corrupted
+positions. That correction matters — a run stopped early in this region looks like
+success by loss and like failure by mechanism. See [EXPERIMENTS.md](EXPERIMENTS.md).
 
 This is a structural difference from mask-based (absorbing-state) discrete diffusion,
 where corrupted positions are *identifiable* by construction — the model can see
@@ -114,7 +119,7 @@ needed to distinguish the interesting outcome from the three boring ones:
 | `next_token_accuracy` | high for an unadapted AR model; falls as adaptation takes hold |
 | `mean_top1_prob`, `mean_entropy` | confidence, used by the adaptive sampler |
 
-Experiment 001 ended at `identity_accuracy = 96.9%` with `lift_over_copy = 0.0%`.
+Experiment 001 peaked at `identity_accuracy = 96.9%` with `lift_over_copy = 0.0%`.
 Without the last two metrics that run reads as a success.
 
 ## Timestep conditioning

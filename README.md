@@ -30,14 +30,29 @@ record enough diagnostics to tell whether the idea is working.
 | Checkpoint save/reload (adapters only) | working |
 | MLX **training** backend | **not implemented** — deliberate, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Quantized (8-bit / 4-bit) training | **not implemented** on Apple silicon, see [docs/MEMORY.md](docs/MEMORY.md) |
-| **Does it actually learn to denoise?** | **No, not yet.** See [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) |
+| **Does it learn to denoise?** | **Yes — on a one-batch memorisation test only.** See [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) |
+| **Does it generalise?** | **Unknown. Never trained on a corpus.** |
 
-The headline experimental result so far is a **negative** one, and it is documented
-rather than buried: under uniform random-token corruption with the loss on all canvas
-positions, LoRA adaptation converges to *copying its input*, not denoising. The loss
-falls 5x and identity accuracy climbs to 96%, and both numbers are meaningless —
-identity accuracy tracks the copy baseline to the decimal. See
-[docs/EXPERIMENTS.md](docs/EXPERIMENTS.md), experiment 001.
+### What is actually established
+
+LoRA on the full-attention `q/k/v/o` projections — 2.4M trainable parameters, 0.32% of
+the model — takes Qwen3.5-0.8B from 0% to 95% accuracy on *corrupted* canvas positions
+in 150 steps, 31 points above what copying the input would score. With MLP targets and
+rank 32 it reaches 100% and loss 0.006. Meanwhile `next_token_accuracy` collapses from
+48% to ~0%: the model genuinely abandons autoregressive prediction.
+
+**This is memorisation of two examples.** It proves the optimisation path exists and the
+harness is wired correctly. It says nothing about unseen text.
+
+### Two findings worth reading before trusting any number here
+
+1. **A falling loss and a rising accuracy are compatible with learning nothing.** The
+   first run "succeeded" at 60 steps with identity accuracy tracking the copy baseline
+   to the decimal — the model had learned to echo its input. `lift_over_copy` and
+   `corrupted_accuracy` exist because of it.
+2. **The AR path does not survive with adapters active.** Reference perplexity degrades
+   14.4x and greedy decoding repeats a single token — the exact consequence of teaching
+   the model an unshifted readout. AR and diffusion are a *toggle*, not coexistence.
 
 ## Install
 
