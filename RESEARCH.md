@@ -291,3 +291,65 @@ workaround helps is Q15, currently negative at initialisation.
 `linear_num_value_heads/num_key_heads = 2`, so the DeltaNet head-replication path
 that was dead code at 0.8B is exercised. 27B has ratio 3 and untied embeddings, both
 still untested.
+
+---
+
+## Phase 3 verdicts (held-out wikitext-2, 4B, Unsloth/MLX)
+
+### 15 (revisited). Is the backward information useful *after training*?
+
+**Answered — no.** The zero-training probe said the aligned reverse pass was
+indistinguishable from a position-shuffled control. Training does not change that:
+
+- aligned − shuffled at t ≥ 0.50 = **−0.41 points** after 600 steps, with fitted
+  slopes of ~0 (+0.03 / −0.03 / −0.09 points per 100 steps at t = 0.50/0.75/0.90) and
+  differences inside the 0.5–0.8 point within-arm evaluation noise;
+- given a learned gate, all 24 layers move **away** from the reverse path
+  (0.9500 → 0.9533).
+
+The predicted signature — a gap that starts near zero and becomes positive — never
+appears.
+
+### 20. Does aligned dual recurrence beat the v0.1 causal hybrid on held-out text?
+
+**Answered — no.** Arm B loses to arm A at all six noise levels
+(6.84% → 5.44% corrupted-position accuracy at t = 0.50) and costs 1.26× wall clock.
+The pre-registered continue criterion required ≥ +3.00 points; the observed margin is
+**−1.06**. **Criterion not met; kill criterion fired.**
+
+### 21. Does FLARE's block-end state readout do better in our harness?
+
+**No, in this configuration** — arm D scores below A at every level. This says nothing
+about FLARE: arm D is their *state-scheduling mechanism* transplanted under our
+objective (pure diffusion, not `L_AR + L_diff`), our corruption (uniform, not masked)
+and our data. See [docs/FLARE_COMPARISON.md](docs/FLARE_COMPARISON.md). Notably,
+implementing it required **no kernel work** — `mlx_lm`'s `gated_delta_update` already
+returns the block-end state, so the readout is one extra matmul.
+
+### 22. Can this configuration learn generalising discrete denoising at all?
+
+**Answered — no, and this is the most important absolute result.** Every arm
+plateaued by step ~250 with held-out cross entropy ~6.57, corrupted-position accuracy
+~6–7% *flat across all noise levels*, copy rate ~3.5%, and lift over copy ≈ −83% at
+t = 0.10. That profile is a model that has stopped conditioning on the canvas and
+emits a generic prefix-conditioned guess.
+
+Rank-16 LoRA on 8 attention layers, 600 steps × batch 4 = 2,400 examples, is far too
+little to relearn an unshifted readout convention on real text. v0.1 already showed
+capacity is decisive (experiment 003 vs 004) and Phase 3 used the *lower*-capacity
+setting.
+
+*To move it:* a new experiment with new pre-registered criteria — more adapter
+capacity (`full_attention + mlp`, plus `deltanet` so the reverse pass is adaptable at
+all), many more steps, and plausibly `corruption: mask`. FLARE uses masking, and v0.1
+experiment 001 showed uniform corruption makes the task ill-posed because corrupted
+positions are unidentifiable. **That is a new experiment, not a re-roll of this one.**
+
+### 3 (final update). Does DeltaNet causality prevent effective bidirectional diffusion?
+
+The causality is real and confirmed at 4B. Two workarounds have now been built and
+measured — our aligned dual recurrence and FLARE's block-end readout — and **neither
+beat simply leaving the DeltaNet layers causal and relying on the periodic
+full-attention layers** in a matched comparison. On current evidence the answer to
+"does DeltaNet causality need fixing?" is: not at this scale, not with this objective,
+and not before the data and capacity problems are addressed.

@@ -27,7 +27,19 @@ positions move under causal, 15/15 under bidirectional), and the leakage boundar
 holds exactly (0 prefix positions move in either condition). Cost: **1.23×** forward,
 **1.19×** forward+backward.
 
-**But the first discriminating measurement is negative.** With zero training, a
+**Phase 3 (held-out wikitext-2) settled it: the hypothesis is not supported.** The
+aligned dual recurrence loses to the causal v0.1 baseline at every noise level while
+costing 1.26x; the aligned-minus-shuffled gap stays at zero throughout training instead
+of becoming positive; and a learned gate moves *away* from the reverse path in all 24
+layers. The pre-registered continue criterion failed and two kill criteria fired. Full
+numbers in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
+
+An honest caveat travels with that: every arm sat in a low-power regime where none
+learned generalising denoising (training plateaued by step 250, lift over copy ~-83%
+at t=0.10). The *relative* comparison the criteria were written against is valid; the
+*absolute* numbers say this capacity/step budget cannot learn the task.
+
+**The earlier zero-training measurement was also negative.** With zero training, a
 position-**shuffled** reverse control matches or beats correctly-aligned reverse
 fusion at every gate value. So the untrained loss improvement is not backward
 positional information — it is an unstructured perturbation of the autoregressive
