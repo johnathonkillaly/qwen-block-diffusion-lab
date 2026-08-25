@@ -1,0 +1,92 @@
+# Act III -- FLARE-inspired AR + diffusion transfer on Qwen3.5-4B-Base.
+#
+# This is a LOCAL REPRODUCTION of the methodological ideas in FLARE
+# (arXiv:2606.01774v2), independently implemented from the paper's specification.
+# It is not an official reproduction and is not benchmark-equivalent to the
+# published implementation. Deviations: docs/ACT3_OBJECTIVE.md.
+#
+# What changed versus Act II Phase 3 (which ended in a canvas-ignoring regime):
+#   objective    pure L_diff            ->  L_AR + lambda_diff * L_diff
+#   corruption   uniform random token   ->  absorbing MASK (identifiable)
+#   supervision  masked positions only  ->  complementary views, every token once
+#   DeltaNet     causal / reverse-fused ->  FLARE block-end state scheduling
+#   capacity     r16 attention only     ->  r32 attention + MLP + DeltaNet
+#   data         wikitext-2 (2M tok)    ->  wikitext-103 packed
+
+model:
+  id: unsloth/Qwen3.5-4B-Base
+  local_path: /Volumes/SHUTTLE/hub/models--unsloth--Qwen3.5-4B-Base/snapshots/61541fe4aed37b6a1e615edd5cbf5a3f660312b1
+  local_files_only: true
+  text_only: true
+
+training:
+  backend: mlx
+  mode: lora
+  dtype: bf16              # BF16 base + BF16 adapters. No 4-bit for Qwen3.5.
+  quantization: none
+  batch_size: 2
+  learning_rate: 1.0e-4
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  warmup_steps: 50
+  max_steps: 2500
+  log_every: 25
+  save_every: 125          # also the held-out health-evaluation interval
+  seed: 1234
+  show_reconstruction: false
+
+lora:
+  rank: 32
+  alpha: 64
+  dropout: 0.0
+  init_scale: 0.01
+  full_attention: true     # Act II Phase 3 used ONLY this, at r16, and never got healthy
+  mlp: true
+  deltanet: true           # the recurrence must be adaptable for state scheduling to matter
+  deltanet_gates: false
+  layer_indices: []
+
+bidirectional_deltanet:
+  enabled: true
+  share_base_weights: true
+  mode: flare              # block-end recurrent-state readout, no reverse recurrence
+  fusion: mean             # unused when mode=flare
+  gate_init: 0.95
+  layer_indices: []
+  train_reverse_lora: false
+
+diffusion:
+  canvas_length: 128       # one diffusion block per example
+  corruption: mask         # absorbing state
+  mask_token_id: null      # auto: last model-vocab row, unreachable by the tokenizer
+  schedule: uniform
+  t_min: 0.05
+  t_max: 1.0
+  lambda_diff: 1.0
+  ar_weight: 1.0
+  complementary_views: true
+  exact_mask_count: true
+  timestep_conditioning: true
+  self_conditioning: false
+  bidirectional_canvas: true
+
+sampler:
+  steps: 16
+  strategy: confidence
+  temperature: 0.0
+  num_blocks: 1
+
+data:
+  source: hf
+  hf_dataset: Salesforce/wikitext:wikitext-103-raw-v1
+  hf_split: train
+  eval_split: validation   # test kept untouched for a final report
+  eval_max_examples: 64
+  min_chars: 1
+  text_field: text
+  prefix_length: 64
+  max_examples: 20000      # packed windows of 192 tokens -> ~3.8M training tokens
+
+run:
+  name: act3-main
+  output_dir: runs

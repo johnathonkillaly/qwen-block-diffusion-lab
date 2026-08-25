@@ -75,6 +75,19 @@ class DiffusionConfig:
     bidirectional_canvas: bool = True
     #: Token id used by the "mask" corruption mode. None -> resolved from tokenizer.
     mask_token_id: int | None = None
+    # --- Act III (FLARE-inspired AR + diffusion transfer) ---
+    #: Weight on the diffusion term in L_total = L_AR + lambda_diff * L_diff.
+    #: FLARE writes unweighted sums over a token-balanced partition; we take per-token
+    #: means of each term, which reproduces that 1:1 balance. See docs/ACT3_OBJECTIVE.md.
+    lambda_diff: float = 1.0
+    #: Weight on the clean causal AR term. 0.0 recovers the Act I/II pure-diffusion
+    #: objective, retained as an ablation.
+    ar_weight: float = 1.0
+    #: FLARE's complementary mask views: M and M^c partition the block, so every canvas
+    #: token gets exactly one diffusion signal per step. Costs a second noisy forward.
+    complementary_views: bool = True
+    #: Mask exactly round(t*C) positions rather than sampling Bernoulli(t) per position.
+    exact_mask_count: bool = True
     #: Which canvas positions contribute to the loss: "all" or "corrupted".
     #: "all" is the standard x0-prediction objective, but under *uniform* corruption
     #: it makes copying the input a strong local optimum -- see docs/EXPERIMENTS.md,

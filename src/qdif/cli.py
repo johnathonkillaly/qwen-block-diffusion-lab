@@ -928,6 +928,138 @@ def cmd_smoke_bidir(args) -> int:
     return 0 if all_pass else 1
 
 
+def cmd_act3_check(args) -> int:
+    """Act III milestone: the 15 checks that gate the main transfer run."""
+    from .mlx_backend.act3_check import run_check
+    from .mlx_backend.act3_trainer import prepare
+
+    cfg = _load_cfg(args)
+    if cfg.training.backend != "mlx":
+        _echo("act3-check requires training.backend: mlx")
+        return 1
+    if cfg.diffusion.corruption != "mask":
+        _echo(f"act3-check requires diffusion.corruption: mask (got {cfg.diffusion.corruption!r})")
+        return 1
+
+    _rule("1  objective")
+    _echo(f"  L_total = {cfg.diffusion.ar_weight} * L_AR + {cfg.diffusion.lambda_diff} * L_diff")
+    _echo("  L_AR   = mean_l -log p(x_l | x_<l)            clean causal stream")
+    _echo("  L_diff = per-token mean over the block partition of")
+    _echo("             -log p(x_l | x~_M,  x_<b)   for l in M")
+    _echo("             -log p(x_l | x~_Mc, x_<b)   for l in M^c")
+    _echo(f"  complementary views: {cfg.diffusion.complementary_views} "
+          f"(M and M^c partition the canvas -> every token supervised once)")
+    _echo("  FLARE arXiv:2606.01774v2 Eq. (4)-(6); deviations in docs/ACT3_OBJECTIVE.md")
+
+    a3 = prepare(cfg, echo=_echo)
+    res = run_check(a3, cfg, _echo)
+
+    ce = res["corruption_example"]
+    _rule("2  mask corruption example")
+    _echo(f"  requested {ce['requested_fraction']:.2f}  actual {ce['actual_masked_fraction']:.3f}  "
+          f"masked {ce['num_masked']:.0f}  visible {ce['num_visible']:.0f}")
+    for label in ("prefix", "clean", "noisy_M", "noisy_Mc"):
+        _echo(f"\n  {label.upper()}:")
+        _echo(f"    {ce[label]}")
+
+    _rule("3  clean vs noisy stream tensor layout")
+    for k, v in res["layout"].items():
+        _echo(f"  {k:<28} {v}")
+
+    _rule("4-5  mechanism verification")
+    for c in res["checks"][1:3]:
+        _echo(f"  [{'PASS' if c['passed'] else 'FAIL'}] {c['name']}: {c['detail']}")
+
+    _rule("6  trainable parameters")
+    p = res["params"]
+    _echo(f"  total          {p['total_params']:>15,}")
+    _echo(f"  trainable      {p['trainable_params']:>15,}  ({p['percent_trainable']:.4f}%)")
+    _echo(f"  frozen         {p['frozen_params']:>15,}")
+    _echo(f"  by family      {p['trainable_by_family']}")
+    if res["lora"]:
+        lr = res["lora"]
+        _echo(f"  lora           {lr['modules']} modules, families {lr['families']}, "
+              f"r={lr['rank']} a={lr['alpha']}, {lr['params']:,} params")
+
+    _rule("7-9  losses")
+    ls = res["losses"]
+    _echo(f"  L_AR    {ls['loss_ar']:.6f}")
+    _echo(f"  L_diff  {ls['loss_diff']:.6f}")
+    _echo(f"  L_total {ls['loss_total']:.6f}")
+
+    _rule("10  gradient verification")
+    g = res["gradients"]
+    _echo(f"  nonzero {g['nonzero']} of {g['tensors']} tensors, by family {g['by_family']}")
+    _echo(f"  frozen base received gradient: "
+          f"{'YES (WRONG)' if g['unexpected_base'] else 'NO (correct)'}")
+    for k, v in g["top"].items():
+        _echo(f"    {k:<62} {v:.4e}")
+
+    _rule("11  canvas-conditioning probe (at initialisation)")
+    cc = res["canvas_conditioning"]
+    _echo(f"  L1 {cc['canvas_l1']:.4f}   JS {cc['canvas_js']:.4f}")
+    _echo("  Scrambling the VISIBLE canvas tokens while holding the mask set and prefix")
+    _echo("  fixed; measured at masked positions. Zero would mean the model ignores xt.")
+    h = res["health_at_init"]
+    _echo(f"  health at init: masked-acc {h['masked_accuracy']:.2%}  "
+          f"visible-preservation {h['visible_preservation']:.2%}  "
+          f"predicts-mask {h['predicts_mask_rate']:.2%}")
+
+    _rule("12-13  memory and projected throughput")
+    pf = res["performance"]
+    _echo(f"  peak unified memory     {pf['peak_unified_gb']:.2f} GB (unified, not VRAM)")
+    _echo(f"  seconds per step        {pf['seconds_per_step']:.3f}  "
+          f"({pf['forwards_per_step']} forwards/step)")
+    _echo(f"  canvas tokens/sec       {pf['canvas_tokens_per_sec']:.1f}")
+    _echo(f"  sequence tokens/sec     {pf['sequence_tokens_per_sec']:.1f}")
+    _echo(f"  projected run           {cfg.training.max_steps} steps -> "
+          f"{pf['projected_wall_minutes']:.0f} min, "
+          f"{pf['projected_train_tokens']:,} canvas tokens")
+
+    _rule("14  dataset")
+    _echo(f"  {cfg.data.hf_dataset}  train split '{cfg.data.hf_split}', "
+          f"held-out '{cfg.data.eval_split}'")
+    _echo(f"  train {a3.train_ds.total_tokens:,} packed tokens | "
+          f"held-out {a3.eval_ds.total_tokens:,} packed tokens")
+    _echo("  license: CC BY-SA 3.0 (WikiText, derived from Wikipedia). Not redistributed;")
+    _echo("  downloaded by the user at run time. See THIRD_PARTY.md.")
+
+    _rule("verdict")
+    _echo("  ALL CHECKS PASSED" if res["all_pass"] else "  FAILURES PRESENT -- do not train")
+
+    if args.json_out:
+        Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.json_out).write_text(json.dumps(res, indent=2, default=str))
+        _echo(f"\n  wrote {args.json_out}")
+    return 0 if res["all_pass"] else 1
+
+
+def cmd_act3_train(args) -> int:
+    from .mlx_backend.act3_trainer import train_act3
+
+    cfg = _load_cfg(args)
+    if cfg.training.backend != "mlx":
+        _echo("act3-train requires training.backend: mlx")
+        return 1
+    _rule("Act III transfer run")
+    _echo(f"  {cfg.training.max_steps} steps, batch {cfg.training.batch_size}, "
+          f"canvas {cfg.diffusion.canvas_length}, prefix {cfg.data.prefix_length}")
+    _echo(f"  L_total = {cfg.diffusion.ar_weight}*L_AR + {cfg.diffusion.lambda_diff}*L_diff, "
+          f"corruption {cfg.diffusion.corruption}, "
+          f"complementary_views {cfg.diffusion.complementary_views}")
+    summary = train_act3(cfg, echo=_echo, dry_run=args.dry_run)
+    if args.dry_run:
+        _echo(json.dumps(summary, indent=2, default=str)[:2000])
+        return 0
+    _rule("summary")
+    _echo(f"  L_AR   {summary['first_loss_ar']:.4f} -> {summary['final_loss_ar']:.4f}")
+    _echo(f"  L_diff {summary['first_loss_diff']:.4f} -> {summary['final_loss_diff']:.4f}")
+    _echo(f"  wall {summary['wall_seconds'] / 60:.1f} min | "
+          f"{summary['mean_tokens_per_sec']:.1f} canvas tok/s | "
+          f"peak {summary['peak_unified_gb']:.2f} GB unified")
+    return 0
+
+
 def cmd_heldout(args) -> int:
     """Phase 3: train one arm and track held-out denoising throughout."""
     from .mlx_backend.heldout import run_arm
@@ -1268,6 +1400,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--probe-layer", type=int, default=None, help="DeltaNet layer to probe")
     sp.add_argument("--json-out", default=None)
     sp.set_defaults(func=cmd_smoke_bidir, steps=None, max_steps=None)
+
+    sp = common(sub.add_parser("act3-check", help="Act III milestone: 15 checks before the transfer run"))
+    sp.add_argument("--json-out", default=None)
+    sp.set_defaults(func=cmd_act3_check, steps=None, max_steps=None)
+
+    sp = common(sub.add_parser("act3-train", help="Act III: AR + diffusion transfer run"))
+    sp.add_argument("--max-steps", type=int, default=None)
+    sp.add_argument("--dry-run", action="store_true")
+    sp.set_defaults(func=cmd_act3_train, steps=None)
 
     sp = common(sub.add_parser("heldout", help="Phase 3: train one arm, track held-out denoising"))
     sp.add_argument("--arm", default=None, help="label for this arm (A/B/C/D)")

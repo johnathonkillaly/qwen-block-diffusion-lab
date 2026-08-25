@@ -121,6 +121,88 @@ def load_texts(cfg, split: str | None = None) -> list[str]:
     ]
 
 
+class PackedCanvasDataset(CanvasDataset):
+    """Token-packed windows: paragraphs are concatenated with an EOS separator and
+    then cut into contiguous (prefix, canvas) windows.
+
+    Act I/II used per-paragraph windows, which throws away every paragraph shorter
+    than the window and wastes the tail of every longer one. Packing matters at Act
+    III scale: the diffusion term only supervises canvas positions, so token
+    efficiency directly determines how much denoising signal a step carries.
+    """
+
+    def __init__(
+        self,
+        texts: Sequence[str],
+        tokenizer,
+        prefix_length: int,
+        canvas_length: int,
+        max_examples: int | None = None,
+        eos_id: int | None = None,
+        max_source_texts: int | None = None,
+    ):
+        window = prefix_length + canvas_length
+        if window < 2:
+            raise ValueError("prefix_length + canvas_length must be >= 2")
+        self.tokenizer = tokenizer
+        self.prefix_length = prefix_length
+        self.canvas_length = canvas_length
+
+        need = (max_examples or 1_000_000) * window + window
+        buf: list[np.ndarray] = []
+        total = 0
+        for i, text in enumerate(texts):
+            if max_source_texts is not None and i >= max_source_texts:
+                break
+            ids = encode(tokenizer, text)
+            if ids.size == 0:
+                continue
+            buf.append(ids)
+            total += ids.size
+            if eos_id is not None:
+                buf.append(np.array([eos_id], dtype=np.int64))
+                total += 1
+            if total >= need:
+                break
+
+        if not buf:
+            raise ValueError("no text to pack")
+        stream = np.concatenate(buf)
+        n_windows = stream.size // window
+        if max_examples:
+            n_windows = min(n_windows, max_examples)
+        if n_windows == 0:
+            raise ValueError(
+                f"packed stream has {stream.size} tokens, fewer than one window of {window}"
+            )
+
+        self.total_tokens = int(n_windows * window)
+        self.examples = []
+        for w in range(n_windows):
+            chunk = stream[w * window : (w + 1) * window]
+            self.examples.append(
+                CanvasExample(
+                    prefix_ids=chunk[:prefix_length].copy(),
+                    canvas_ids=chunk[prefix_length:].copy(),
+                    text="",
+                )
+            )
+
+
+def build_packed_dataset(
+    cfg, tokenizer, canvas_length: int, split: str, max_examples: int, eos_id: int | None = None
+) -> PackedCanvasDataset:
+    texts = load_texts(cfg, split=split)
+    return PackedCanvasDataset(
+        texts=texts,
+        tokenizer=tokenizer,
+        prefix_length=cfg.prefix_length,
+        canvas_length=canvas_length,
+        max_examples=max_examples,
+        eos_id=eos_id,
+    )
+
+
 def build_dataset(
     cfg, tokenizer, canvas_length: int, split: str | None = None, max_examples: int | None = None
 ) -> CanvasDataset:
