@@ -1,0 +1,79 @@
+# MLX backend target config.
+#
+# THIS CONFIG DOES NOT RUN YET. `training.backend: mlx` raises NotImplementedError
+# with a pointer to the port plan. It is checked in so the intended MLX
+# configuration is explicit and reviewable, not so it can be launched.
+#
+# Reason for the deferral, in short: mlx-lm ships its own independent Gated
+# DeltaNet implementation, and milestone 1 must not debug a new token-mixer
+# implementation and a new training objective at the same time. Full reasoning in
+# src/qdif/training/mlx_trainer.py and docs/ARCHITECTURE.md.
+#
+# MLX *inference* works today: `qdif compare --mlx`.
+
+model:
+  id: Qwen/Qwen3.5-4B-Base
+  local_path: null
+  local_files_only: true
+  text_only: true
+  attn_implementation: sdpa   # ignored by the MLX backend
+
+training:
+  backend: mlx
+  mode: lora
+  dtype: bf16
+  device: auto
+  quantization: none          # MLX-native 4/8-bit quantization is the path here,
+                              # not bitsandbytes (which is CUDA-only)
+  batch_size: 2
+  grad_accum: 2
+  learning_rate: 1.0e-4
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  warmup_steps: 20
+  max_steps: 200
+  log_every: 5
+  sample_every: 25
+  save_every: 100
+  seed: 1234
+  show_reconstruction: true
+
+lora:
+  rank: 32
+  alpha: 64
+  dropout: 0.0
+  target_preset: full_attn
+  target_modules: []
+  layer_indices: []
+  init_scale: 0.01
+
+diffusion:
+  canvas_length: 64
+  corruption: uniform
+  schedule: uniform
+  t_min: 0.0
+  t_max: 1.0
+  timestep_conditioning: true
+  self_conditioning: false
+  self_conditioning_prob: 0.5
+  bidirectional_canvas: true
+
+sampler:
+  steps: 16
+  adaptive: false
+  confidence_threshold: 0.95
+  temperature: 0.0
+  strategy: confidence
+  num_blocks: 1
+
+data:
+  source: dev
+  hf_dataset: null
+  hf_split: train
+  text_field: text
+  prefix_length: 32
+  max_examples: 256
+
+run:
+  name: qwen35-4b-lora-mlx
+  output_dir: runs

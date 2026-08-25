@@ -1,0 +1,78 @@
+# Development default.
+#
+# Uses Qwen3.5-0.8B because it is ALREADY ON THIS MACHINE and is architecturally
+# identical to Qwen3.5-4B in every way this experiment depends on: the same 3:1
+# Gated-DeltaNet / full-attention hybrid, the same MTP head, the same tied
+# embeddings, the same 248,320-token vocabulary, the same multimodal wrapper with a
+# separable text decoder. Nothing in this harness is tuned to 0.8B.
+#
+# For the stated 4B target, use configs/qwen35_4b_lora_torch.yaml -- it will need a
+# ~1.6 GB (0.8B) vs ~8 GB (4B) download, so it is not the default.
+
+model:
+  id: Qwen/Qwen3.5-0.8B
+  local_path: null
+  local_files_only: true
+  text_only: true
+  attn_implementation: sdpa
+
+training:
+  backend: torch          # mlx backend is a documented stub; see docs/ARCHITECTURE.md
+  mode: lora              # lora | full
+  dtype: bf16
+  device: auto            # -> mps on this machine
+  quantization: none
+  batch_size: 2
+  grad_accum: 1
+  learning_rate: 2.0e-4
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  warmup_steps: 5
+  max_steps: 20
+  log_every: 1
+  sample_every: 5
+  save_every: 0
+  seed: 1234
+  show_reconstruction: true
+
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.0
+  # Conservative first hypothesis: adapt only the layers that can actually see the
+  # bidirectional canvas. See docs/QWEN35_NOTES.md.
+  target_preset: full_attn
+  target_modules: []
+  layer_indices: []       # [] = all layers containing a matching module
+  init_scale: 0.01
+
+diffusion:
+  canvas_length: 32       # 16 unit tests / 32 smoke / 64 first experiments
+  corruption: uniform     # uniform random-token replacement (not mask tokens)
+  schedule: uniform
+  t_min: 0.0
+  t_max: 1.0
+  timestep_conditioning: true
+  self_conditioning: false   # milestone 1
+  self_conditioning_prob: 0.5
+  bidirectional_canvas: true
+
+sampler:
+  steps: 8
+  adaptive: false
+  confidence_threshold: 0.95
+  temperature: 0.0
+  strategy: confidence
+  num_blocks: 1
+
+data:
+  source: dev
+  hf_dataset: null
+  hf_split: train
+  text_field: text
+  prefix_length: 16
+  max_examples: 64
+
+run:
+  name: dev
+  output_dir: runs

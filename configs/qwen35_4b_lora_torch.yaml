@@ -1,0 +1,75 @@
+# The stated primary target: Qwen3.5-4B-Base.
+#
+# NOT the default config, because this checkpoint is not on this machine yet.
+# `local_files_only: true` will fail loudly with a list of what IS local rather
+# than silently starting an ~8 GB download. Flip it to false, or set local_path,
+# once you have decided to fetch it.
+#
+# Use -Base for the conversion experiment. Swap to `Qwen/Qwen3.5-4B` to test the
+# separate question of whether post-trained behaviour survives diffusion conversion.
+
+model:
+  id: Qwen/Qwen3.5-4B-Base
+  local_path: null
+  local_files_only: true
+  text_only: true
+  attn_implementation: sdpa
+
+training:
+  backend: torch
+  mode: lora
+  dtype: bf16
+  device: auto
+  quantization: none
+  batch_size: 1
+  grad_accum: 4
+  learning_rate: 1.0e-4
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  warmup_steps: 20
+  max_steps: 200
+  log_every: 5
+  sample_every: 25
+  save_every: 100
+  seed: 1234
+  show_reconstruction: true
+
+lora:
+  rank: 32
+  alpha: 64
+  dropout: 0.0
+  target_preset: full_attn
+  target_modules: []
+  layer_indices: []
+  init_scale: 0.01
+
+diffusion:
+  canvas_length: 64
+  corruption: uniform
+  schedule: uniform
+  t_min: 0.0
+  t_max: 1.0
+  timestep_conditioning: true
+  self_conditioning: false
+  self_conditioning_prob: 0.5
+  bidirectional_canvas: true
+
+sampler:
+  steps: 16
+  adaptive: false
+  confidence_threshold: 0.95
+  temperature: 0.0
+  strategy: confidence
+  num_blocks: 1
+
+data:
+  source: dev
+  hf_dataset: null
+  hf_split: train
+  text_field: text
+  prefix_length: 32
+  max_examples: 256
+
+run:
+  name: qwen35-4b-lora
+  output_dir: runs

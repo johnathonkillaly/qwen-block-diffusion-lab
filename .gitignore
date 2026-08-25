@@ -1,0 +1,53 @@
+# --- environments ---
+# Anchored to the repo root: `src/qdif/env/` is source, not a virtualenv.
+/.venv/
+/venv/
+/env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- model weights / checkpoints (NEVER commit) ---
+*.safetensors
+*.bin
+*.gguf
+*.pt
+*.pth
+*.npz
+*.ckpt
+checkpoints/
+runs/
+outputs/
+adapters/
+
+# --- data & caches ---
+data/cache/
+*.arrow
+.cache/
+hf_cache/
+.hf_home/
+
+# --- experiment logs ---
+logs/
+*.jsonl
+!tests/**/*.jsonl
+wandb/
+tensorboard/
+
+# --- secrets ---
+.env
+.env.*
+*.key
+*.pem
+secrets.*
+
+# --- os ---
+.DS_Store
+.AppleDouble
+Thumbs.db

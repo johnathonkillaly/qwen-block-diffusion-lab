@@ -1,0 +1,48 @@
+# Tiny/fast config for unit tests and quick iteration: 16-token canvas, fp32 so
+# numerical checks are not fighting bf16 rounding, single example batches.
+
+model:
+  id: Qwen/Qwen3.5-0.8B
+  local_path: null
+  local_files_only: true
+  text_only: true
+  attn_implementation: eager
+
+training:
+  backend: torch
+  mode: lora
+  dtype: fp32
+  device: auto
+  batch_size: 1
+  learning_rate: 2.0e-4
+  warmup_steps: 0
+  max_steps: 5
+  log_every: 1
+  sample_every: 2
+  seed: 0
+
+lora:
+  rank: 8
+  alpha: 16
+  target_preset: full_attn
+
+diffusion:
+  canvas_length: 16
+  corruption: uniform
+  schedule: uniform
+  timestep_conditioning: true
+  self_conditioning: false
+  bidirectional_canvas: true
+
+sampler:
+  steps: 4
+  strategy: confidence
+
+data:
+  source: dev
+  prefix_length: 8
+  max_examples: 8
+
+run:
+  name: smoke16
+  output_dir: runs
