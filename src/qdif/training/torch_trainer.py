@@ -32,6 +32,21 @@ from .diagnostics import (
 from .lora import freeze_base, inject_lora
 
 
+def _tail_mean(history: list, key: str, fraction: float = 0.25) -> float | None:
+    """Mean of a metric over the last `fraction` of steps, ignoring NaNs.
+
+    Per-step metrics jump around because every step samples a fresh timestep; a
+    verdict read off the final step alone is mostly reading that noise.
+    """
+    if not history:
+        return None
+    tail = history[-max(1, int(len(history) * fraction)) :]
+    values = [
+        h.metrics[key] for h in tail if key in h.metrics and h.metrics[key] == h.metrics[key]
+    ]
+    return sum(values) / len(values) if values else None
+
+
 @dataclass
 class TrainingSetup:
     model: DiffusionQwen
@@ -161,7 +176,9 @@ def training_step(
         prefix_ids=batch.prefix_ids,
         self_cond_logits=self_cond_logits,
     )
-    loss_out = diffusion_loss(out.logits, batch.canvas_x0, batch.corrupted_mask, loss_on="all")
+    loss_out = diffusion_loss(
+        out.logits, batch.canvas_x0, batch.corrupted_mask, loss_on=cfg.diffusion.loss_on
+    )
 
     metrics = {}
     if compute_metrics:
@@ -220,7 +237,9 @@ def train(cfg: ExperimentConfig, echo=print, fixed_batch: bool = False) -> dict:
     for step in range(cfg.training.max_steps):
         t_start = time.time()
         examples = frozen_examples if fixed_batch else next(stream)
-        batch = setup.collator(examples)
+        # Move here, not inside training_step: the diagnostics below read the same
+        # batch object and must not compare a CPU tensor against device logits.
+        batch = setup.collator(examples).to(setup.device)
 
         loss_out, metrics, logits = training_step(setup, batch, cfg)
         loss = loss_out.loss / cfg.training.grad_accum
@@ -294,7 +313,15 @@ def train(cfg: ExperimentConfig, echo=print, fixed_batch: bool = False) -> dict:
         "final_identity_accuracy": history[-1].metrics.get("identity_accuracy") if history else None,
         "final_corrupted_accuracy": history[-1].metrics.get("corrupted_accuracy") if history else None,
         "final_copy_rate": history[-1].metrics.get("copy_rate") if history else None,
+        "final_copy_baseline_accuracy": (
+            history[-1].metrics.get("copy_baseline_accuracy") if history else None
+        ),
+        "final_lift_over_copy": history[-1].metrics.get("lift_over_copy") if history else None,
         "final_next_token_accuracy": history[-1].metrics.get("next_token_accuracy") if history else None,
+        # Single-step metrics are noisy because each step draws a new timestep, so
+        # the verdict uses a tail average rather than the last step alone.
+        "mean_corrupted_accuracy_last_quarter": _tail_mean(history, "corrupted_accuracy"),
+        "mean_lift_last_quarter": _tail_mean(history, "lift_over_copy"),
         "accuracy_by_noise_bucket": buckets.summary(),
         "peak_memory_gb": max((h.peak_memory_gb for h in history), default=0.0),
         "memory_kind": memory_label(setup.device),

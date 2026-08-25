@@ -570,8 +570,9 @@ def cmd_overfit(args) -> int:
     """The mandatory first experiment: memorise one batch, or stop and debug."""
     cfg = _load_cfg(args)
     cfg.run.name = args.run_name or "overfit-one-batch"
-    if args.max_steps is None:
-        cfg.training.max_steps = 60
+    # --max-steps wins; otherwise respect the config but never run fewer than 60
+    # steps, which is too few for the memorisation signal to be readable.
+    cfg.training.max_steps = args.max_steps or max(cfg.training.max_steps, 60)
     cfg.training.log_every = max(cfg.training.max_steps // 20, 1)
     cfg.training.sample_every = max(cfg.training.max_steps // 4, 1)
     # A single batch cannot be denoised at every noise level at once; clamp the
@@ -588,21 +589,61 @@ def cmd_overfit(args) -> int:
 
     first, final = summary["first_loss"], summary["final_loss"]
     acc = summary["final_identity_accuracy"] or 0.0
+    corr = summary["final_corrupted_accuracy"] or 0.0
+    lift = summary["final_lift_over_copy"] or 0.0
+    mean_corr = summary["mean_corrupted_accuracy_last_quarter"] or 0.0
+    mean_lift = summary["mean_lift_last_quarter"] or 0.0
+
     _rule("verdict")
-    _echo(f"  loss {first:.4f} -> {final:.4f}")
-    _echo(f"  identity accuracy {summary['first_identity_accuracy']:.1%} -> {acc:.1%}")
-    _echo(f"  corrupted-position accuracy {summary['final_corrupted_accuracy']:.1%}")
-    _echo(f"  copy rate {summary['final_copy_rate']:.1%}")
-    _echo(f"  peak {summary['peak_memory_gb']:.2f} GB {summary['memory_kind']}")
-    ok = final < first * 0.5 and acc > 0.5
+    _echo(f"  loss                          {first:.4f} -> {final:.4f}")
+    _echo(f"  identity accuracy             {summary['first_identity_accuracy']:.1%} -> {acc:.1%}")
+    _echo(f"  copy-baseline accuracy        {summary['final_copy_baseline_accuracy']:.1%}"
+          "   (what a pure copier scores)")
+    _echo(f"  lift over copy                {lift:+.1%}   (mean over last quarter: {mean_lift:+.1%})")
+    _echo(f"  corrupted-position accuracy   {corr:.1%}   (mean over last quarter: {mean_corr:.1%})")
+    _echo(f"  next-token accuracy           {summary['final_next_token_accuracy']:.1%}"
+          "   (falls as AR behaviour is abandoned)")
+    _echo(f"  peak memory                   {summary['peak_memory_gb']:.2f} GB {summary['memory_kind']}")
+
+    loss_fell = final < first * 0.5
+    denoising = mean_corr > 0.15 and mean_lift > 0.02
+    copy_rate = summary["final_copy_rate"] or 0.0
     _echo("")
-    if ok:
-        _echo("  PASS: the batch is being memorised. Proceed to a real training run.")
+
+    if loss_fell and denoising:
+        _echo("  PASS: loss fell AND corrupted positions are repaired above the copy")
+        _echo("  baseline. The optimisation path works; proceed to a real training run.")
+        _echo(f"  full log: {summary['run_dir']}")
+        return 0
+
+    if not loss_fell:
+        _echo("  FAIL (no learning): the loss is not falling. Do NOT train longer --")
+        _echo("  debug the readout alignment, the LoRA targets and the learning rate.")
+    elif mean_lift < -0.10:
+        _echo("  FAIL (mode collapse): the loss fell, but identity accuracy is now WELL")
+        _echo("  BELOW what a pure copier would score. The model is emitting a few")
+        _echo("  high-frequency tokens across the whole canvas and destroying the clean")
+        _echo("  positions along with the corrupted ones.")
+        _echo("")
+        _echo("  Typical with loss_on='corrupted': nothing rewards leaving clean tokens")
+        _echo("  alone, so the model stops distinguishing them. Consider a blended")
+        _echo("  objective, or more adapter capacity (lora.target_preset=full_attn_mlp).")
+    elif copy_rate > 0.5 and mean_corr < 0.15:
+        _echo("  FAIL (copy collapse): the loss fell and identity accuracy rose, but")
+        _echo("  corrupted-position accuracy did not, and the lift over a pure copier is")
+        _echo("  ~zero. The model has learned to ECHO ITS INPUT, not to denoise.")
+        _echo("")
+        _echo("  This is a real result, not a bug: under uniform random-token corruption")
+        _echo("  with loss_on='all', copying is a strong local optimum, because most")
+        _echo("  positions are uncorrupted and the model cannot tell which ones are.")
+        _echo("  Try diffusion.loss_on='corrupted' or diffusion.corruption='mask'.")
     else:
-        _echo("  FAIL: the model is not overfitting one batch. Do NOT train longer --")
-        _echo("  debug. Check readout alignment, LoRA targets, and learning rate.")
+        _echo("  FAIL (partial): the loss fell but corrupted-position accuracy stayed")
+        _echo(f"  below the {0.15:.0%} threshold ({mean_corr:.1%}). Not yet denoising.")
+    _echo("")
+    _echo("  Do NOT compensate by training longer. See docs/EXPERIMENTS.md.")
     _echo(f"  full log: {summary['run_dir']}")
-    return 0 if ok else 1
+    return 1
 
 
 def cmd_reconstruct(args) -> int:

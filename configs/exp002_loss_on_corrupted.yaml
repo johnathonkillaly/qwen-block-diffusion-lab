@@ -1,0 +1,64 @@
+# Experiment 002: remove the copy shortcut.
+#
+# Experiment 001 (configs/qwen35_0_8b_lora_torch.yaml) showed copy collapse: with
+# loss_on='all' under uniform corruption, the loss fell 5x and identity accuracy
+# reached the copy baseline exactly, while corrupted-position accuracy stayed near
+# zero. The model learned to echo its input.
+#
+# The hypothesis this config tests: the copy shortcut exists because uncorrupted
+# positions dominate the loss and are trivially solved by copying. Scoring ONLY the
+# positions the forward process actually changed removes that reward entirely.
+#
+# Cost of the change: no gradient at t = 0 (nothing is corrupted), so t_min is
+# raised off zero. The model is no longer trained to leave clean tokens alone,
+# which is a real trade-off, not a free win -- watch clean_accuracy.
+
+model:
+  id: Qwen/Qwen3.5-0.8B
+  local_path: null
+  local_files_only: true
+  text_only: true
+  attn_implementation: sdpa
+
+training:
+  backend: torch
+  mode: lora
+  dtype: bf16
+  device: auto
+  batch_size: 2
+  learning_rate: 2.0e-4
+  max_grad_norm: 1.0
+  warmup_steps: 5
+  max_steps: 60
+  log_every: 3
+  sample_every: 15
+  seed: 1234
+
+lora:
+  rank: 16
+  alpha: 32
+  target_preset: full_attn
+
+diffusion:
+  canvas_length: 32
+  corruption: uniform
+  schedule: uniform
+  t_min: 0.1          # loss_on='corrupted' has no signal at t = 0
+  t_max: 0.5
+  loss_on: corrupted
+  timestep_conditioning: true
+  self_conditioning: false
+  bidirectional_canvas: true
+
+sampler:
+  steps: 8
+  strategy: confidence
+
+data:
+  source: dev
+  prefix_length: 16
+  max_examples: 4
+
+run:
+  name: exp002-loss-on-corrupted
+  output_dir: runs

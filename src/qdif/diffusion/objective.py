@@ -125,6 +125,15 @@ def diffusion_metrics(
         copy_rate              -- P(argmax logits[i] == xt[i]). A model that has
                                   collapsed to "echo my input" shows copy_rate ~ 1
                                   with corrupted_accuracy ~ 0.
+        copy_baseline_accuracy -- identity accuracy a *pure copier* would score,
+                                  i.e. the fraction of positions noise left alone.
+                                  This is the trivial solution's score.
+        lift_over_copy         -- identity_accuracy - copy_baseline_accuracy. THE
+                                  headline number. Copying is a strong local optimum
+                                  under uniform corruption, so identity_accuracy on
+                                  its own can rise a long way while the model learns
+                                  nothing about denoising. Only lift_over_copy > 0
+                                  means information is being recovered.
         next_token_accuracy    -- P(argmax logits[i] == x0[i+1]). High for an
                                   unadapted AR model; should fall as adaptation
                                   takes hold.
@@ -145,11 +154,17 @@ def diffusion_metrics(
     top1 = probs.max(dim=-1).values
     entropy = -(probs.clamp_min(1e-9).log() * probs).sum(dim=-1)
 
+    # A pure copier scores exactly the fraction of positions the noise left intact.
+    copy_baseline = float((xt == x0).float().mean())
+    identity = float(correct.mean())
+
     out = {
-        "identity_accuracy": float(correct.mean()),
+        "identity_accuracy": identity,
         "corrupted_accuracy": _masked_mean(correct, corrupted),
         "clean_accuracy": _masked_mean(correct, clean),
         "copy_rate": float((pred == xt).float().mean()),
+        "copy_baseline_accuracy": copy_baseline,
+        "lift_over_copy": identity - copy_baseline,
         "mean_top1_prob": float(top1.mean()),
         "mean_entropy": float(entropy.mean()),
     }

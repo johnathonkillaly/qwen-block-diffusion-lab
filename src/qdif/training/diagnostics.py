@@ -83,6 +83,7 @@ class StepRecord:
             f"| t {self.t_mean:.3f} | corrupt {self.corruption_fraction:5.1%} "
             f"| id-acc {m.get('identity_accuracy', float('nan')):5.1%} "
             f"| corr-acc {m.get('corrupted_accuracy', float('nan')):5.1%} "
+            f"| lift {m.get('lift_over_copy', float('nan')):+6.1%} "
             f"| copy {m.get('copy_rate', float('nan')):5.1%} "
             f"| next-tok {m.get('next_token_accuracy', float('nan')):5.1%} "
             f"| gnorm {self.grad_norm:7.3f} | {self.tokens_per_sec:7.1f} tok/s "

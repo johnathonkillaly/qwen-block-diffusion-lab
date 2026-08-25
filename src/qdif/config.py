@@ -67,6 +67,12 @@ class DiffusionConfig:
     bidirectional_canvas: bool = True
     #: Token id used by the "mask" corruption mode. None -> resolved from tokenizer.
     mask_token_id: int | None = None
+    #: Which canvas positions contribute to the loss: "all" or "corrupted".
+    #: "all" is the standard x0-prediction objective, but under *uniform* corruption
+    #: it makes copying the input a strong local optimum -- see docs/EXPERIMENTS.md,
+    #: experiment 001. "corrupted" scores only the positions noise actually changed,
+    #: which removes the copy shortcut at the cost of no gradient at t = 0.
+    loss_on: str = "all"
 
 
 @dataclass
