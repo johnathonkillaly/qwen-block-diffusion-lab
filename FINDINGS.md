@@ -69,6 +69,18 @@ parameters. (Its `/api/train/diffusion/*` endpoints are *image* diffusion LoRA.)
 
 ---
 
+**A frozen backbone plus a token-conditional LoRA gives exactly-lossless block
+decoding, for free.** Act IV-U's adapter+verifier reproduces frozen-AR greedy output
+with 100% token equality at K=1,2,4 — with a *trained or an untrained* adapter, because
+the verifier guarantees it. Worth stating precisely because it is the claim most easily
+mistaken for a result: it is a property of the algorithm, costs nothing, and is not
+evidence that the method works.
+
+**The adapter learns a real, control-separated part of the AR trajectory.** Held-out
+agreement at future slot +1 rose from 6.3% (untrained) to 39.1% at K=2, while a
+shuffled-teacher control stayed at 3.9%. Free-running acceptance improved 2.9–4.5×
+over untrained at every block size. See [docs/act4u_results.md](docs/act4u_results.md).
+
 ## Negative results
 
 **Shared-weight bidirectional Gated DeltaNet does not improve held-out denoising.**
@@ -94,6 +106,24 @@ lost to simply relying on the periodic full-attention layers.
 timestep — it had found "add a large constant to canvas positions". Under mask
 corruption the module is unnecessary anyway (the `[MASK]` count *is* the noise level),
 and FLARE carries no timestep embedding. Removed, plus a permanent norm bound.
+
+**Uno-style block decoding is slower than autoregression on a hybrid recurrent
+backbone, and the reason is one forward.** Act IV-U reached tokens-per-forward 0.980
+at K=2 against the 1.000 that plain AR gets by definition, and 0.63–0.83× AR wall
+clock. A Gated DeltaNet recurrence cannot be rewound into the middle of a forward, so
+a *partially* accepted block costs a third forward to replay the accepted tokens.
+Remove only that term — the counterfactual for a rewindable, pure-attention backbone —
+and TPF is 1.20–1.28 at K=2/4/8. **This is the runtime failing to realise the
+algorithm, not the algorithm failing**, and the two are reported separately.
+
+**Low teacher entropy does not predict a longer parallel horizon; high entropy does
+predict failure.** Bucketing K=4 agreement by teacher entropy gives 0.197 / 0.316 /
+0.237 / 0.197 / 0.075 from lowest to highest — non-monotone, with only the top bucket
+clearly collapsing. Near-zero entropy often means the next token is fixed by the
+*immediately preceding* one (finishing a word or a name), which is exactly what a
+noise-filled draft row cannot see. An argument against naive entropy-routed dynamic
+block sizing, which the block-level correlation (r = −0.15 to −0.28) alone would have
+hidden.
 
 **One-batch overfit saturates at 4B and cannot rank mechanisms.** At 0.8B it
 discriminated; at 4B both the causal and bidirectional configs hit loss ~1e-4 and 100%
