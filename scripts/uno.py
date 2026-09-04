@@ -615,17 +615,21 @@ def cmd_bench(args) -> int:
     print(f"  median {ar_median:.2f} tok/s over {len(ar_rows)} prompts")
 
     results = {}
+    modes = [m.strip() for m in args.transaction_modes.split(",") if m.strip()]
     for block_size in [int(b) for b in args.block_sizes.split(",")]:
-        print(f"\n-- Uno B={block_size} --")
+      for txn_mode in modes:
+        print(f"\n-- Uno B={block_size} txn={txn_mode} --")
         rows = []
         entropies, accepts = [], []
         for (domain, text, ids), ar_row in zip(prompts, ar_rows):
             for _ in range(args.warmup):
-                uno_greedy_generate(model, ids, max_tokens=8, block_size=block_size)
+                uno_greedy_generate(model, ids, max_tokens=8, block_size=block_size,
+                                    transaction_mode=txn_mode)
             best = None
             for _ in range(args.repeats):
                 tokens, stats = uno_greedy_generate(
-                    model, ids, max_tokens=args.tokens, block_size=block_size
+                    model, ids, max_tokens=args.tokens, block_size=block_size,
+                    transaction_mode=txn_mode,
                 )
                 row = stats.to_dict()
                 if best is None or row["tokens_per_second"] > best["tokens_per_second"]:
@@ -658,8 +662,15 @@ def cmd_bench(args) -> int:
         total_forwards = sum(r["forwards"] for r in rows)
         total_accepted = sum(r["acceptance_rate"] * r["cycles"] for r in rows)
         total_replays = sum(r["replay_forwards"] for r in rows)
+        rewind_steps = sum((r.get("transaction") or {}).get("rewind_steps", 0) for r in rows)
+        rewind_fallbacks = sum((r.get("transaction") or {}).get("rewind_fallbacks", 0) for r in rows)
         summary = {
             "block_size": block_size,
+            "transaction_mode": txn_mode,
+            "peak_record_bytes": max(
+                (r.get("transaction") or {}).get("peak_record_bytes", 0) for r in rows
+            ),
+            "rewind_fallback_rate": round(rewind_fallbacks / rewind_steps, 4) if rewind_steps else None,
             "tokens_per_forward": round(total_tokens / max(total_forwards, 1), 4),
             # counterfactual: what a rewindable (pure-attention) backbone would give,
             # i.e. without the DeltaNet replay tax. Accounting only, never a speed claim.
@@ -689,7 +700,7 @@ def cmd_bench(args) -> int:
             "rows": rows,
         }
         del total_accepted
-        results[f"B{block_size}"] = summary
+        results[f"B{block_size}_{txn_mode}"] = summary
         print(
             f"  TPF {summary['tokens_per_forward']:.3f} "
             f"(no-replay {summary['tokens_per_forward_without_replay']:.3f}) | "
@@ -698,6 +709,9 @@ def cmd_bench(args) -> int:
             f"{median_speed:.2f} tok/s ({summary['wall_speedup_vs_ar']:.2f}x AR) | "
             f"forward reduction {summary['forward_reduction_vs_ar']:.2f}x | "
             f"entropy~accept r={summary['entropy_vs_accepted_pearson']:+.3f}"
+            + (f" | rewind fallback {100*summary['rewind_fallback_rate']:.1f}%"
+               if summary["rewind_fallback_rate"] is not None else "")
+            + f" | record {summary['peak_record_bytes']/1e6:.0f} MB"
         )
 
     payload = {
@@ -712,6 +726,136 @@ def cmd_bench(args) -> int:
         payload["backbone_digest_before"] == payload["backbone_digest_after"]
     )
     write_json(Path(args.out), payload)
+    return 0
+
+
+# ------------------------------------------------------------- draftability
+
+
+def cmd_draftability(args) -> int:
+    """Analysis only (§18): does 'draftability gap' predict acceptance better than entropy?
+
+    Act IV-U found teacher entropy a poor predictor at the *low* end. The hypothesis is
+    that what matters is not how uncertain the next token is, but how much it depends on
+    the immediately preceding tokens a parallel draft cannot see.
+
+    Both quantities are properties of the **frozen model**, measured with no adapter:
+
+        P_full    = p(y_{t+j} | true causal predecessors)          -> ar_logits
+        P_corrupt = p(y_{t+j} | predecessors replaced by noise)    -> bare model, noise rows
+        draftability_gap(j) = TV(P_full, P_corrupt)
+
+    A large gap means the position is intrinsically un-draftable. The comparison is then
+    which of `entropy` or `gap` better predicts whether the *trained* adapter's argmax
+    matches the teacher's.
+    """
+    import mlx.core as mx
+
+    from qdif.uno.data import build_sources
+    from qdif.uno.gated_lora import gated_lora_modules
+    from qdif.uno.metrics import pearson
+    from qdif.uno.teacher import build_uno_batch
+    from qdif.uno.trainer import load_adapter
+
+    model, _ = load_model(rank=args.rank, full_attention=True, mlp=True)
+    pristine = {id(m): (m.lora_a, m.lora_b) for m in gated_lora_modules(model.base)}
+
+    _, val_source = build_sources(
+        model.tokenizer, width=args.window, batch_size=args.batch_size,
+        train_windows=8, val_windows=args.val_windows, seed=args.seed,
+        eos_id=model.tokenizer.eos_token_id,
+    )
+    windows = [next(val_source) for _ in range(args.eval_batches)]
+
+    gaps, entropies, hits, slots = [], [], [], []
+    for chunk in windows:
+        batch = build_uno_batch(
+            chunk, block_size=args.block_size, mask_token_id=model.mask_token_id,
+            vocab_size=model.vocab_size, corruption="full",
+        )
+        # frozen-model quantities: adapter reset to its zero-init no-op
+        for module in gated_lora_modules(model.base):
+            a, b = pristine[id(module)]
+            module.lora_a, module.lora_b = a, mx.zeros_like(b)
+        mx.eval(model.base.parameters())
+
+        full = mx.stop_gradient(
+            model.ar_logits(batch.teacher_ids)[:, batch.supervised_slice, :]
+        ).astype(mx.float32)
+        corrupt = mx.stop_gradient(
+            model.draft_logits(batch.student_ids, batch.lora_mask)[
+                :, batch.supervised_slice, :
+            ]
+        ).astype(mx.float32)
+
+        lf = full - mx.logsumexp(full, axis=-1, keepdims=True)
+        lc = corrupt - mx.logsumexp(corrupt, axis=-1, keepdims=True)
+        gap = mx.sum(mx.abs(mx.exp(lf) - mx.exp(lc)), axis=-1)          # [B, L]
+        entropy = -mx.sum(mx.exp(lf) * lf, axis=-1)                      # [B, L]
+
+        # trained adapter -> did it agree with the teacher at this position?
+        load_adapter(model, args.adapter)
+        student = mx.stop_gradient(
+            model.draft_logits(batch.student_ids, batch.lora_mask)[
+                :, batch.supervised_slice, :
+            ]
+        )
+        hit = (mx.argmax(student, axis=-1) == mx.argmax(full, axis=-1)).astype(mx.float32)
+
+        b, length = gap.shape
+        index = mx.broadcast_to(mx.arange(length)[None, :], (b, length))
+        for arr, sink in ((gap, gaps), (entropy, entropies), (hit, hits), (index, slots)):
+            sink.extend([float(x) for x in arr.reshape(-1).tolist()])
+
+    # slot 0 is the unadapted seed and is trivially a hit; exclude it.
+    keep = [i for i, s in enumerate(slots) if s > 0]
+    gaps = [gaps[i] for i in keep]
+    entropies = [entropies[i] for i in keep]
+    hits = [hits[i] for i in keep]
+
+    r_gap = pearson(gaps, hits)
+    r_entropy = pearson(entropies, hits)
+    r_cross = pearson(gaps, entropies)
+
+    def buckets(values, name):
+        order = sorted(range(len(values)), key=lambda i: values[i])
+        size = max(1, len(order) // 5)
+        out = []
+        for index in range(5):
+            lo = index * size
+            hi = len(order) if index == 4 else min(len(order), (index + 1) * size)
+            chunk = order[lo:hi]
+            if not chunk:
+                continue
+            out.append({
+                "bucket": index, "n": len(chunk),
+                "mean": round(sum(values[i] for i in chunk) / len(chunk), 4),
+                "agreement": round(sum(hits[i] for i in chunk) / len(chunk), 4),
+            })
+        print(f"  {name}:")
+        for row in out:
+            print(f"    q{row['bucket']} n={row['n']:5d} mean {row['mean']:8.4f} -> agreement {row['agreement']:.4f}")
+        return out
+
+    print(f"\n-- draftability vs entropy (K={args.block_size}, {len(hits)} spec positions) --")
+    gap_buckets = buckets(gaps, "draftability gap TV(P_full, P_corrupt)")
+    entropy_buckets_ = buckets(entropies, "teacher entropy H(P_full)")
+    print(f"\n  pearson(gap, agreement)     = {r_gap:+.4f}")
+    print(f"  pearson(entropy, agreement) = {r_entropy:+.4f}")
+    print(f"  pearson(gap, entropy)       = {r_cross:+.4f}")
+    dominant = "draftability_gap" if abs(r_gap) > abs(r_entropy) else "entropy"
+    print(f"  stronger predictor: {dominant}")
+
+    write_json(Path(args.out), {
+        "provenance": provenance({"stage": "draftability"}),
+        "block_size": args.block_size,
+        "positions": len(hits),
+        "pearson": {"gap_vs_agreement": r_gap, "entropy_vs_agreement": r_entropy,
+                    "gap_vs_entropy": r_cross},
+        "stronger_predictor": dominant,
+        "gap_buckets": gap_buckets,
+        "entropy_buckets": entropy_buckets_,
+    })
     return 0
 
 
@@ -785,11 +929,24 @@ def main() -> int:
     pn.add_argument("--alpha", type=float, default=None)
     pn.add_argument("--lora-deltanet", action="store_true")
     pn.add_argument("--block-sizes", default="1,2,4,8")
+    pn.add_argument("--transaction-modes", default="replay")
     pn.add_argument("--tokens", type=int, default=48)
     pn.add_argument("--repeats", type=int, default=3)
     pn.add_argument("--warmup", type=int, default=1)
     pn.add_argument("--out", default="runs/uno-bench/bench.json")
     pn.set_defaults(func=cmd_bench)
+
+    pd = sub.add_parser("draftability", help="predecessor-dependence analysis (§18)")
+    pd.add_argument("--adapter", required=True)
+    pd.add_argument("--rank", type=int, default=16)
+    pd.add_argument("--block-size", type=int, default=4)
+    pd.add_argument("--window", type=int, default=128)
+    pd.add_argument("--batch-size", type=int, default=4)
+    pd.add_argument("--eval-batches", type=int, default=32)
+    pd.add_argument("--val-windows", type=int, default=256)
+    pd.add_argument("--seed", type=int, default=20260903)
+    pd.add_argument("--out", default="runs/uno-draftability/draftability.json")
+    pd.set_defaults(func=cmd_draftability)
 
     args = parser.parse_args()
     return args.func(args)

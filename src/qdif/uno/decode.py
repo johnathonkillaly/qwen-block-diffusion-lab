@@ -39,6 +39,7 @@ import mlx.core as mx
 
 from .cache_utils import cache_length, restore_caches, snapshot_caches
 from .noise import build_draft_block, draft_lora_mask
+from .transaction import TransactionStats, begin_transaction
 from .verifier import greedy_accept
 
 
@@ -60,6 +61,8 @@ class DecodeStats:
     entropy_per_cycle: list[float] = field(default_factory=list)
     wall_seconds: float = 0.0
     prefill_seconds: float = 0.0
+    transaction_mode: str = "replay"
+    transaction: object = None
 
     @property
     def tokens_per_forward(self) -> float:
@@ -112,6 +115,8 @@ class DecodeStats:
             "wall_seconds": round(self.wall_seconds, 4),
             "prefill_seconds": round(self.prefill_seconds, 4),
             "tokens_per_second": round(self.tokens_per_second, 3),
+            "transaction_mode": self.transaction_mode,
+            "transaction": self.transaction.to_dict() if self.transaction else None,
         }
 
 
@@ -189,6 +194,7 @@ def uno_greedy_generate(
     noise_seed: int | None = None,
     stop_ids: set[int] | None = None,
     use_cache: bool = True,
+    transaction_mode: str = "replay",
 ) -> tuple[list[int], DecodeStats]:
     """Uno draft→verify decoding. Greedy, so the output is meant to be *identical*
     to `ar_greedy_generate` — the adapter changes how fast tokens arrive, never
@@ -206,6 +212,8 @@ def uno_greedy_generate(
         )
 
     stats = DecodeStats()
+    stats.transaction_mode = transaction_mode
+    txn_stats = TransactionStats()
     generated: list[int] = []
     start = time.perf_counter()
 
@@ -250,9 +258,11 @@ def uno_greedy_generate(
         # The leading seed is re-sent because the cache cannot be advanced by exactly
         # one token without re-running it (see module docstring).
         verify_ids = mx.array([[seed] + proposal], dtype=mx.int32)
-        verify_logits = model.ar_logits(verify_ids, cache=caches)
-        stats.forwards += 1
-        stats.forward_tokens += verify_ids.shape[1]
+        transaction = begin_transaction(
+            model, caches, mode=transaction_mode, stats=txn_stats
+        )
+        verify_logits = transaction.run_block(verify_ids)
+        stats.forward_tokens += int(verify_ids.shape[1])
         result = greedy_accept(proposal, verify_logits[0, 1:])
 
         row = verify_logits[0, 0].astype(mx.float32)
@@ -281,33 +291,28 @@ def uno_greedy_generate(
         generated.extend(committed)
 
         if stop_at is not None or len(generated) >= max_tokens:
+            transaction.commit_prefix(min(len(committed), int(verify_ids.shape[1])))
             break
 
         # --- advance the cache to the new committed frontier -----------------------
-        full_run = result.full_block and not truncated
-        if full_run:
-            # The verify pass already left the cache at exactly the right place:
-            # frontier + 1 (seed) + L, and the new frontier is old + L+1 - 1.
-            expected = frontier + 1 + block_size
-            if cache_length(caches) != expected:
-                raise RuntimeError(
-                    f"cache invariant violated after full acceptance: "
-                    f"{cache_length(caches)} != {expected}"
-                )
-        else:
-            restore_caches(caches, snapshot)
-            replay = [seed] + committed[:-1]
-            replay_logits = model.ar_logits(
-                mx.array([replay], dtype=mx.int32), cache=caches
+        # Committing `m` tokens must leave the cache at `frontier + m`: the verify
+        # block's first `m` tokens are exactly `[seed] + committed[:-1]`, and the last
+        # committed token becomes the next uncached seed.
+        transaction.commit_prefix(len(committed))
+        if cache_length(caches) != frontier + len(committed):
+            raise RuntimeError(
+                f"cache invariant violated after commit: "
+                f"{cache_length(caches)} != {frontier + len(committed)}"
             )
-            mx.eval(replay_logits)
-            stats.forwards += 1
-            stats.replay_forwards += 1
-            stats.forward_tokens += len(replay)
-            if cache_length(caches) != frontier + len(replay):
-                raise RuntimeError("cache invariant violated after replay")
         seed = committed[-1]
 
+    # Forward accounting comes from the transaction, which is the only thing that
+    # knows whether a commit needed a replay. `stats.forwards` counted the prefill and
+    # each draft; the transaction counted each verify block plus any replay.
+    stats.forwards += txn_stats.full_forwards
+    stats.replay_forwards = txn_stats.replay_forwards
+    stats.forward_tokens += txn_stats.replay_tokens
+    stats.transaction = txn_stats
     stats.wall_seconds = time.perf_counter() - start
     stats.tokens = len(generated)
     return generated, stats

@@ -109,6 +109,8 @@ losses.py       TV (IFM's default), reverse KL, CE
 verifier.py     greedy acceptance + a slow sequential reference to check it
 decode.py       AR baseline and the Uno draft->verify cycle, cached and uncached
 cache_utils.py  hybrid-cache snapshot/restore (KV offset + DeltaNet state)
+recurrence.py   ACT IV-U2: DeltaNet forward that records per-token state
+transaction.py  ACT IV-U2: begin/commit_prefix/rollback; replay|snapshot|rewind
 metrics.py      per-slot agreement, entropy buckets
 trainer.py      training loop, saturation guard, adapter save/load
 data.py         wikitext windows + the held-out prompt suite
@@ -136,7 +138,7 @@ HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python -m pytest -q tests/test_act3.p
 
 | set | result |
 |---|---|
-| `-m "not model"` (fast; must always pass) | **307 passed** (240 pre-Act-IV-U + 67 Uno) |
+| `-m "not model"` (fast; must always pass) | **358 passed** (240 pre-Act-IV-U + 118 Uno/U2) |
 | MLX model tests | **64 passed** |
 | torch v0.1 (`test_model_integration.py`) | **19 failed, 9 passed — pre-existing** |
 
@@ -214,7 +216,9 @@ actually published, tagged confirmed / inferred / our approximation),
 [`docs/act4u_preregistered_criteria.md`](docs/act4u_preregistered_criteria.md) (frozen),
 [`docs/act4u_results.md`](docs/act4u_results.md).
 
-**Status: first full cycle complete. Verdict `ALGORITHMIC SIGNAL, NO SPEEDUP`.**
+**Status: Act IV-U complete; Act IV-U2 (transactional state) complete and successful.**
+
+### Act IV-U verdict: `ALGORITHMIC SIGNAL, NO SPEEDUP`
 
 | gate | result |
 |---|---|
@@ -292,6 +296,16 @@ adapter. Benchmark a trained adapter against the AR baseline in one harness:
 
 ```bash
 HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py bench --adapter runs/uno-k4-true/adapter.safetensors --block-sizes 1,2,4,8
+```
+
+Act IV-U2 — transactional decoding (the fast path) and the draftability analysis:
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py bench --adapter runs/uno-k4-true/adapter.safetensors --block-sizes 2,4 --transaction-modes replay,snapshot,rewind
+```
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py draftability --adapter runs/uno-k4-true/adapter.safetensors --block-size 8 --eval-batches 96
 ```
 
 Act IV-U tests (no checkpoint needed — they use `qdif.uno.tiny`):

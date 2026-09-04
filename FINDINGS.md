@@ -81,6 +81,30 @@ agreement at future slot +1 rose from 6.3% (untrained) to 39.1% at K=2, while a
 shuffled-teacher control stayed at 3.9%. Free-running acceptance improved 2.9–4.5×
 over untrained at every block size. See [docs/act4u_results.md](docs/act4u_results.md).
 
+**The replay forward was the whole bottleneck, and it can be removed.** Act IV-U2
+unrolls the Gated DeltaNet recurrence *inside the existing verify forward* so per-token
+state is captured, making a prefix commit a state selection rather than a model pass.
+With **no retraining, the same adapter and byte-identical output**, tokens-per-forward
+went 0.862 -> **1.279** at K=4 and wall clock 0.79x -> **1.03x** AR (1.09x at K=2).
+Act IV-U's counterfactual prediction of 1.20-1.28 was accurate.
+See [docs/act4u2_results.md](docs/act4u2_results.md).
+
+**Gated DeltaNet is algebraically invertible but not numerically invertible.** The
+one-token inverse is exact rank-1 algebra (verified to 4.8e-07), yet two independent
+mechanisms destroy information in the forward pass: `beta` saturates to exactly 1.0 in
+bf16 (0.043% of head-steps), making the update an orthogonal projection that annihilates
+the `k` direction; and decay `g` reaches 0, forgetting the state outright. Worst
+single-step amplification `1/((1-beta)g)` is 2.9e+20. Algebraic rewind therefore needs a
+snapshot fallback, cannot replace the snapshot it depends on, and is slower than it.
+
+**"Draftability gap" predicts block acceptance about twice as well as entropy.**
+`TV(p(y | true predecessors), p(y | noised predecessors))` -- a property of the frozen
+model alone -- correlates -0.211 with acceptance against entropy's -0.097 (n=2688), and
+its quintiles are monotone where entropy's are not. This explains the Act IV-U anomaly
+that the *lowest*-entropy bucket drafted badly: a near-deterministic token is often
+fixed by the token immediately before it, which is exactly what a parallel draft cannot
+see.
+
 ## Negative results
 
 **Shared-weight bidirectional Gated DeltaNet does not improve held-out denoising.**

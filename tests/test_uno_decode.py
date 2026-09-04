@@ -173,3 +173,41 @@ def test_stop_token_truncates_mid_block():
         model, PROMPT, max_tokens=40, block_size=8, stop_ids={stop}
     )
     assert tokens == expected
+
+
+@pytest.mark.parametrize("mode", ["snapshot", "rewind"])
+@pytest.mark.parametrize("block_size", [2, 4, 8])
+def test_transaction_modes_produce_identical_output(mode, block_size):
+    """Act IV-U2 Gate U2-1: swapping the state backend must change nothing but cost."""
+    model = _model(trained=True)
+    reference, replay_stats = uno_greedy_generate(
+        model, PROMPT, max_tokens=32, block_size=block_size,
+        noise_mode="deterministic_uniform", noise_seed=5, transaction_mode="replay",
+    )
+    assert_varied(reference)
+    tokens, stats = uno_greedy_generate(
+        model, PROMPT, max_tokens=32, block_size=block_size,
+        noise_mode="deterministic_uniform", noise_seed=5, transaction_mode=mode,
+    )
+    assert tokens == reference, f"{mode} diverged from replay at K={block_size}"
+    assert stats.committed_per_cycle == replay_stats.committed_per_cycle
+    assert stats.accepted_specs == replay_stats.accepted_specs
+
+
+@pytest.mark.parametrize("block_size", [2, 4, 8])
+def test_snapshot_removes_every_replay_forward(block_size):
+    """Gate U2-2, counted explicitly rather than inferred from wall clock."""
+    model = _model(trained=True)
+    _, replay_stats = uno_greedy_generate(
+        model, PROMPT, max_tokens=32, block_size=block_size,
+        noise_mode="deterministic_uniform", noise_seed=5, transaction_mode="replay",
+    )
+    _, snap_stats = uno_greedy_generate(
+        model, PROMPT, max_tokens=32, block_size=block_size,
+        noise_mode="deterministic_uniform", noise_seed=5, transaction_mode="snapshot",
+    )
+    assert replay_stats.replay_forwards > 0, "no partial acceptances — test is vacuous"
+    assert snap_stats.replay_forwards == 0
+    assert snap_stats.forwards == 1 + 2 * snap_stats.cycles
+    assert snap_stats.forwards < replay_stats.forwards
+    assert snap_stats.tokens_per_forward > replay_stats.tokens_per_forward
