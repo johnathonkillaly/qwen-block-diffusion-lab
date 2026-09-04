@@ -77,6 +77,7 @@ def build_uno_batch(
     corruption: str = "uniform",
     shuffle_targets: bool = False,
     rng_key: mx.array | None = None,
+    key: mx.array | None = None,
 ) -> UnoBatch:
     """Build one batch from `[B, W]` token windows.
 
@@ -121,19 +122,23 @@ def build_uno_batch(
         corrupted = mx.zeros((batch, 0), dtype=mx.float32)
         rate = mx.zeros((batch,), dtype=mx.float32)
     else:
+        noise_key, rate_key, draw_key = (
+            (None, None, None) if key is None else tuple(mx.random.split(key, 3))
+        )
         noise = make_noise(
             (batch, num_draft), noise_mode, mask_token_id, vocab_size,
             seed=None if rng_key is None else int(rng_key.item()),
+            key=noise_key,
         )
         clean_tail = true_ids[:, block_start + 1 : block_start + 1 + num_draft]
         if corruption == "full":
             keep_noise = mx.ones((batch, num_draft), dtype=mx.float32)
             rate = mx.ones((batch,), dtype=mx.float32)
         elif corruption == "uniform":
-            rate = mx.random.uniform(shape=(batch, 1))
-            keep_noise = (mx.random.uniform(shape=(batch, num_draft)) < rate).astype(
-                mx.float32
-            )
+            rate = mx.random.uniform(shape=(batch, 1), key=rate_key)
+            keep_noise = (
+                mx.random.uniform(shape=(batch, num_draft), key=draw_key) < rate
+            ).astype(mx.float32)
             rate = rate.reshape(batch)
         else:
             raise ValueError(f"unknown corruption schedule {corruption!r}")

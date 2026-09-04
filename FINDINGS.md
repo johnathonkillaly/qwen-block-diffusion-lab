@@ -105,6 +105,39 @@ that the *lowest*-entropy bucket drafted badly: a near-deterministic token is of
 fixed by the token immediately before it, which is exactly what a parallel draft cannot
 see.
 
+**Acceptance, TPF and wall-clock throughput all scale with adapter training.** Act
+IV-U3 trained 8x longer (400 -> 3200 steps) with the decoder, backbone, adapter
+architecture, objective, data and harness all held constant. At K=4 every link of the
+chain moved together: validation TV 1.1041 -> 0.9862, held-out teacher-forced agreement
+0.2240 -> 0.2917, free-running acceptance 0.2275 -> 0.3415 (+50%), TPF 1.2789 -> 1.4314,
+forwards/token 0.7819 -> 0.6986, and wall clock 51.05 -> 56.45 tok/s (1.056x -> 1.168x
+AR, a 2.8-sigma move against measured repeat noise). Lower loss really did become more
+accepted tokens and then real throughput. The relationship is sub-linear: +50%
+acceptance bought +10.6% wall clock. See [docs/act4u3_results.md](docs/act4u3_results.md).
+
+**K=4 overtook K=2 once the horizon extended, and K=2 is nearly exhausted.** In U2, K=2
+was the faster decoder (1.09x vs 1.03x AR). After scaling, K=4 leads 1.168x vs 1.086x.
+The reason is visible in the future-offset curve: relative improvement was +21% at
+offset +1 but **+72% at +2**, so the parallel horizon genuinely lengthened rather than
+the next-token predictor merely sharpening. The fitted decoder cost model puts K=2's
+structural ceiling at 1.343x AR (1.50x is unreachable at *any* acceptance) against
+K=4's 2.107x.
+
+**Training helps hardest where drafting is hardest.** Bucketing held-out positions by
+the frozen model's draftability gap, the *least* draftable quintile improved most
+(+0.125 acceptance) and the most draftable improved least (+0.026) between steps 400 and
+3200. The adapter is learning to bridge missing-predecessor dependence, not just
+exploiting regions that were already easy — and this flattens the gap-acceptance
+correlation, which is why that correlation does not strengthen with training.
+
+**Evaluation can silently corrupt a training run through a shared RNG.** Batch
+construction drew its corruption rate and noise tokens from the *global* MLX stream,
+which training also draws from. Changing only `eval_every` and `eval_batches` therefore
+shifted every later training noise draw: two runs with identical seeds, data and
+hyperparameters diverged in **all 256** adapter tensors. It was caught only because a
+pre-registered gate compared the re-run against the archived checkpoint. Evaluation now
+uses an explicit PRNG key.
+
 ## Negative results
 
 **Shared-weight bidirectional Gated DeltaNet does not improve held-out denoising.**

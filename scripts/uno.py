@@ -431,6 +431,7 @@ def cmd_train(args) -> int:
         seed=args.seed,
         eval_every=args.eval_every,
         eval_batches=args.eval_batches,
+        checkpoint_steps=[int(x) for x in args.checkpoint_steps.split(",") if x.strip()],
     )
     train_source, val_source = build_sources(
         model.tokenizer,
@@ -859,6 +860,304 @@ def cmd_draftability(args) -> int:
     return 0
 
 
+
+# ------------------------------------------------------------------- u3 eval
+
+
+def _median_std(values):
+    ordered = sorted(values)
+    n = len(ordered)
+    median = ordered[n // 2] if n % 2 else 0.5 * (ordered[n // 2 - 1] + ordered[n // 2])
+    mean = sum(values) / n
+    variance = sum((v - mean) ** 2 for v in values) / max(n - 1, 1)
+    return median, variance ** 0.5, mean
+
+
+def cmd_u3_eval(args) -> int:
+    """Evaluate every U3 checkpoint in ONE session, on one harness.
+
+    Everything that is compared is measured back to back in the same process: the AR
+    baseline, each checkpoint's held-out teacher-forced agreement, its free-running
+    decode statistics, and its draftability-gap stratification. Absolute tok/s drifts
+    between sessions with machine load, so cross-session comparison of a few percent
+    would be meaningless.
+    """
+    import mlx.core as mx
+
+    from qdif.uno.cost_model import (
+        CycleCost, ceiling, distribution_from_counts, predicted_tokens_per_second,
+        predicted_tpf, speedup_table,
+    )
+    from qdif.uno.data import build_sources, prompt_suite_tokens
+    from qdif.uno.decode import ar_greedy_generate, uno_greedy_generate
+    from qdif.uno.gated_lora import gated_lora_modules
+    from qdif.uno.losses import total_variation
+    from qdif.uno.metrics import pearson, slot_metrics
+    from qdif.uno.teacher import build_uno_batch
+    from qdif.uno.trainer import load_adapter
+
+    model, _ = load_model(rank=args.rank, full_attention=True, mlp=True)
+    fingerprint = model.fingerprint(full=True)
+    pristine = {id(m): (m.lora_a, m.lora_b) for m in gated_lora_modules(model.base)}
+    block_sizes = [int(b) for b in args.block_sizes.split(",")]
+
+    prompts = prompt_suite_tokens(model.tokenizer)
+    _, val_source = build_sources(
+        model.tokenizer, width=args.window, batch_size=args.batch_size,
+        train_windows=8, val_windows=args.val_windows, seed=args.seed,
+        eos_id=model.tokenizer.eos_token_id,
+    )
+    windows = [next(val_source) for _ in range(args.eval_batches)]
+    print(f"[u3] {len(windows) * args.batch_size} held-out rows, "
+          f"{len(prompts)} decode prompts, {args.repeats} repeats")
+
+    def reset_adapter():
+        for module in gated_lora_modules(model.base):
+            a, b = pristine[id(module)]
+            module.lora_a, module.lora_b = a, mx.zeros_like(b)
+        mx.eval(model.base.parameters())
+
+    # ---- AR baseline, measured once in this session -------------------------
+    print("\n== AR baseline ==")
+    reset_adapter()
+    ar_rows, ar_reference = [], {}
+    for domain, text, ids in prompts:
+        for _ in range(args.warmup):
+            ar_greedy_generate(model, ids, max_tokens=8)
+        speeds = []
+        for _ in range(args.repeats):
+            tokens, st = ar_greedy_generate(model, ids, max_tokens=args.tokens)
+            speeds.append(st.tokens_per_second)
+        ar_reference[text] = tokens
+        ar_rows.append({"domain": domain, "prompt": text,
+                        "tokens_per_second": max(speeds), "forwards": st.forwards})
+    ar_median, ar_std, ar_mean = _median_std([r["tokens_per_second"] for r in ar_rows])
+    print(f"  AR {ar_median:.2f} tok/s (mean {ar_mean:.2f}, sd across prompts {ar_std:.2f})")
+
+    checkpoints = [c.split("=", 1) for c in args.checkpoint]
+    results = []
+
+    for name, path in checkpoints:
+        print(f"\n== checkpoint {name} ==")
+        reset_adapter()
+        n_loaded = load_adapter(model, str(Path(path) / "adapter.safetensors")
+                                if Path(path).is_dir() else path)
+        entry = {"checkpoint": name, "path": path, "adapter_tensors": n_loaded,
+                 "per_block": {}}
+
+        for block_size in block_sizes:
+            # ---- held-out teacher-forced (verifier acceptance) --------------
+            tf, tv_total, rows_n = [], 0.0, 0
+            gaps, hits = [], []
+            for chunk in windows:
+                batch = build_uno_batch(
+                    chunk, block_size=block_size, mask_token_id=model.mask_token_id,
+                    vocab_size=model.vocab_size, corruption="full",
+                )
+                teacher = mx.stop_gradient(
+                    model.ar_logits(batch.teacher_ids)[:, batch.supervised_slice, :])
+                student = mx.stop_gradient(
+                    model.draft_logits(batch.student_ids, batch.lora_mask)[
+                        :, batch.supervised_slice, :])
+                tf.append(slot_metrics(student, teacher, batch.targets))
+                tv_total += float(total_variation(student, teacher).item()) * batch.batch_size
+                rows_n += batch.batch_size
+
+            def merge(key):
+                vals = [m[key] for m in tf]
+                if isinstance(vals[0], list):
+                    return [round(sum(c) / len(c), 5) for c in zip(*vals)]
+                return round(sum(vals) / len(vals), 5)
+
+            teacher_forced = {
+                "agree_specs": merge("agree_specs"),
+                "agree_per_slot": merge("agree_per_slot"),
+                "mean_accepted_prefix": merge("mean_accepted_prefix"),
+                "full_block_rate": merge("full_block_rate"),
+                "validation_tv": round(tv_total / rows_n, 5),
+                "rows": rows_n,
+            }
+
+            # ---- free-running decode ---------------------------------------
+            speeds, tpfs, hist, prop, ver, com = [], [], {}, [], [], []
+            repeat_spread = []
+            forwards = tokens_total = replays = 0
+            agreement = []
+            for domain, text, ids in prompts:
+                for _ in range(args.warmup):
+                    uno_greedy_generate(model, ids, max_tokens=8, block_size=block_size,
+                                        transaction_mode="snapshot")
+                best = None
+                per_prompt = []
+                for _ in range(args.repeats):
+                    toks, st = uno_greedy_generate(
+                        model, ids, max_tokens=args.tokens, block_size=block_size,
+                        transaction_mode="snapshot")
+                    per_prompt.append(st.tokens_per_second)
+                    if best is None or st.tokens_per_second > best.tokens_per_second:
+                        best, best_tokens = st, toks
+                if len(per_prompt) > 1:
+                    mu = sum(per_prompt) / len(per_prompt)
+                    repeat_spread.append(
+                        (sum((v - mu) ** 2 for v in per_prompt) / (len(per_prompt) - 1)) ** 0.5)
+                speeds.append(best.tokens_per_second)
+                tpfs.append(best.tokens_per_forward)
+                forwards += best.forwards
+                tokens_total += best.tokens
+                replays += best.replay_forwards
+                for a in best.accepted_per_cycle:
+                    hist[a] = hist.get(a, 0) + 1
+                d = best.to_dict()
+                prop.append(d["proposal_ms_per_cycle"])
+                ver.append(d["verify_ms_per_cycle"])
+                com.append(d["commit_ms_per_cycle"])
+                ref = ar_reference[text]
+                agreement.append(sum(x == y for x, y in zip(best_tokens, ref)) / max(len(ref), 1))
+
+            med, sd, mean = _median_std(speeds)
+            cost = CycleCost(sum(prop) / len(prop), sum(ver) / len(ver), sum(com) / len(com))
+            distribution = distribution_from_counts(hist)
+            offered = block_size - 1
+            free_running = {
+                "tokens_per_forward": round(tokens_total / forwards, 5),
+                "forwards_per_token": round(forwards / tokens_total, 5),
+                "replay_forwards": replays,
+                "median_tokens_per_second": round(med, 3),
+                "mean_tokens_per_second": round(mean, 3),
+                "std_tokens_per_second": round(sd, 3),
+                # Spread across prompts mixes prompt difficulty with timing noise.
+                # `repeat_noise_tok_s` is the pure measurement noise: the mean, over
+                # prompts, of the standard deviation across repeats of the SAME prompt.
+                # U3-4 requires beating the U2 baseline by more than this.
+                "repeat_noise_tok_s": round(
+                    sum(repeat_spread) / len(repeat_spread), 4) if repeat_spread else 0.0,
+                "speedup_vs_ar": round(med / ar_median, 4),
+                "acceptance_histogram": {str(k): v for k, v in sorted(hist.items())},
+                "mean_accepted_specs": round(
+                    sum(k * v for k, v in hist.items()) / sum(hist.values()), 4),
+                "acceptance_rate": round(
+                    sum(k * v for k, v in hist.items()) / (sum(hist.values()) * offered), 4)
+                    if offered else 0.0,
+                "full_block_rate": round(hist.get(offered, 0) / sum(hist.values()), 4),
+                "p_accept_ge": {
+                    str(k): round(sum(v for a, v in hist.items() if a >= k) / sum(hist.values()), 4)
+                    for k in range(1, min(offered, 4) + 1)},
+                "cycle_cost_ms": cost.to_dict(),
+                "predicted_tokens_per_second": round(
+                    predicted_tokens_per_second(block_size, distribution, cost), 3),
+                "predicted_tpf": round(predicted_tpf(block_size, distribution), 5),
+                "ar_agreement": round(sum(agreement) / len(agreement), 4),
+                "ceiling": ceiling(block_size, cost, ar_median),
+                "speedup_requirements": speedup_table(block_size, cost, ar_median),
+            }
+            free_running["cost_model_error_pct"] = round(
+                100 * (free_running["predicted_tokens_per_second"] - med) / med, 3)
+
+            entry["per_block"][f"K{block_size}"] = {
+                "teacher_forced": teacher_forced, "free_running": free_running}
+            print(f"  K={block_size}  tf-agree {teacher_forced['agree_specs']:.4f} "
+                  f"val-tv {teacher_forced['validation_tv']:.4f} | "
+                  f"accept {free_running['acceptance_rate']:.4f} "
+                  f"TPF {free_running['tokens_per_forward']:.4f} | "
+                  f"{med:.2f}+-{sd:.2f} tok/s ({free_running['speedup_vs_ar']:.3f}x AR) | "
+                  f"cost-model err {free_running['cost_model_error_pct']:+.1f}%")
+
+        # ---- draftability stratification, frozen-model metric ---------------
+        entry["draftability"] = _draftability_quintiles(
+            model, windows, args.draftability_block, reset_adapter, pristine)
+        q = entry["draftability"]
+        print("  draftability quintile acceptance: "
+              + " ".join(f"q{b['bucket']}={b['agreement']:.3f}" for b in q["buckets"])
+              + f" | r(gap)={q['pearson_gap']:+.4f} r(H)={q['pearson_entropy']:+.4f}")
+
+        entry["backbone_digest"] = model.fingerprint(full=True).digest
+        entry["backbone_unchanged"] = entry["backbone_digest"] == fingerprint.digest
+        results.append(entry)
+
+    payload = {
+        "provenance": provenance({"stage": "u3-eval"}),
+        "ar_baseline": {"median_tokens_per_second": round(ar_median, 3),
+                        "mean_tokens_per_second": round(ar_mean, 3),
+                        "std_tokens_per_second": round(ar_std, 3),
+                        "rows": ar_rows},
+        "harness": {"tokens": args.tokens, "repeats": args.repeats,
+                    "warmup": args.warmup, "eval_rows": len(windows) * args.batch_size,
+                    "prompts": len(prompts), "window": args.window, "seed": args.seed},
+        "backbone_digest": fingerprint.digest,
+        "checkpoints": results,
+    }
+    write_json(Path(args.out), payload)
+    return 0
+
+
+def _draftability_quintiles(model, windows, block_size, reset_adapter, pristine):
+    """Acceptance stratified by the FROZEN model's draftability gap.
+
+    The gap is a property of the base model and the text, so it is recomputed with the
+    adapter reset to its zero-init no-op and never drifts as the adapter trains.
+    """
+    import mlx.core as mx
+
+    from qdif.uno.gated_lora import gated_lora_modules
+    from qdif.uno.metrics import pearson
+    from qdif.uno.teacher import build_uno_batch
+
+    trained = {id(m): (m.lora_a, m.lora_b) for m in gated_lora_modules(model.base)}
+    gaps, entropies, hits = [], [], []
+
+    for chunk in windows:
+        batch = build_uno_batch(
+            chunk, block_size=block_size, mask_token_id=model.mask_token_id,
+            vocab_size=model.vocab_size, corruption="full")
+
+        reset_adapter()
+        full = mx.stop_gradient(
+            model.ar_logits(batch.teacher_ids)[:, batch.supervised_slice, :]).astype(mx.float32)
+        corrupt = mx.stop_gradient(
+            model.draft_logits(batch.student_ids, batch.lora_mask)[
+                :, batch.supervised_slice, :]).astype(mx.float32)
+        lf = full - mx.logsumexp(full, axis=-1, keepdims=True)
+        lc = corrupt - mx.logsumexp(corrupt, axis=-1, keepdims=True)
+        gap = mx.sum(mx.abs(mx.exp(lf) - mx.exp(lc)), axis=-1)
+        entropy = -mx.sum(mx.exp(lf) * lf, axis=-1)
+
+        for module in gated_lora_modules(model.base):
+            a, b = trained[id(module)]
+            module.lora_a, module.lora_b = a, b
+        mx.eval(model.base.parameters())
+        student = mx.stop_gradient(
+            model.draft_logits(batch.student_ids, batch.lora_mask)[
+                :, batch.supervised_slice, :])
+        hit = (mx.argmax(student, axis=-1) == mx.argmax(full, axis=-1)).astype(mx.float32)
+
+        b_, length = gap.shape
+        for row in range(b_):
+            for slot in range(1, length):  # slot 0 is the unadapted seed
+                gaps.append(float(gap[row, slot]))
+                entropies.append(float(entropy[row, slot]))
+                hits.append(float(hit[row, slot]))
+
+    order = sorted(range(len(gaps)), key=lambda i: gaps[i])
+    size = max(1, len(order) // 5)
+    buckets = []
+    for index in range(5):
+        lo = index * size
+        hi = len(order) if index == 4 else min(len(order), (index + 1) * size)
+        chunk_idx = order[lo:hi]
+        if not chunk_idx:
+            continue
+        buckets.append({
+            "bucket": index, "n": len(chunk_idx),
+            "mean_gap": round(sum(gaps[i] for i in chunk_idx) / len(chunk_idx), 5),
+            "agreement": round(sum(hits[i] for i in chunk_idx) / len(chunk_idx), 5),
+        })
+    return {
+        "block_size": block_size, "positions": len(hits), "buckets": buckets,
+        "pearson_gap": round(pearson(gaps, hits), 5),
+        "pearson_entropy": round(pearson(entropies, hits), 5),
+    }
+
+
 # ------------------------------------------------------------------------ main
 
 
@@ -908,6 +1207,7 @@ def main() -> int:
     pt.add_argument("--eval-every", type=int, default=50)
     pt.add_argument("--eval-batches", type=int, default=4)
     pt.add_argument("--seed", type=int, default=20260903)
+    pt.add_argument("--checkpoint-steps", default="", help="comma-separated steps to checkpoint")
     pt.add_argument("--out", default="runs/uno-train")
     pt.set_defaults(func=cmd_train)
 
@@ -947,6 +1247,22 @@ def main() -> int:
     pd.add_argument("--seed", type=int, default=20260903)
     pd.add_argument("--out", default="runs/uno-draftability/draftability.json")
     pd.set_defaults(func=cmd_draftability)
+
+    p3 = sub.add_parser("u3-eval", help="evaluate U3 checkpoints in one session")
+    p3.add_argument("--checkpoint", action="append", default=[], metavar="NAME=PATH")
+    p3.add_argument("--rank", type=int, default=16)
+    p3.add_argument("--block-sizes", default="2,4")
+    p3.add_argument("--draftability-block", type=int, default=4)
+    p3.add_argument("--window", type=int, default=128)
+    p3.add_argument("--batch-size", type=int, default=4)
+    p3.add_argument("--eval-batches", type=int, default=32)
+    p3.add_argument("--val-windows", type=int, default=256)
+    p3.add_argument("--tokens", type=int, default=48)
+    p3.add_argument("--repeats", type=int, default=3)
+    p3.add_argument("--warmup", type=int, default=1)
+    p3.add_argument("--seed", type=int, default=20260903)
+    p3.add_argument("--out", default="runs/u3a/eval.json")
+    p3.set_defaults(func=cmd_u3_eval)
 
     args = parser.parse_args()
     return args.func(args)

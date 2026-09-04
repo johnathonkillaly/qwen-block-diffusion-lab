@@ -75,6 +75,11 @@ class UnoTrainConfig:
     eval_batches: int = 4
     log_every: int = 10
 
+    #: Steps at which to write a full checkpoint (adapter + optimizer + RNG). Act IV-U
+    #: saved only the adapter, which made exact resume impossible and forced Act IV-U3
+    #: to re-run from scratch for a continuous trajectory. Do not repeat that.
+    checkpoint_steps: list[int] = field(default_factory=list)
+
     def resolved_alpha(self) -> float:
         return 16.0 * self.lora_rank if self.lora_alpha is None else self.lora_alpha
 
@@ -112,11 +117,14 @@ def evaluate(
     """
     block_size = block_size or config.block_size
     num_batches = num_batches or config.eval_batches
+    # A private key stream. Evaluation must not consume the global RNG that training
+    # draws from -- see `make_noise`'s docstring and gate U3-0b.
+    eval_key = mx.random.key(config.seed + 999_983)
     totals: dict[str, list] = {}
     rows = 0
     tv_total = 0.0
 
-    for _ in range(num_batches):
+    for index in range(num_batches):
         windows = next(windows_iter)
         batch = build_uno_batch(
             windows,
@@ -126,6 +134,7 @@ def evaluate(
             noise_mode=config.noise_mode,
             corruption="full",
             shuffle_targets=config.shuffle_targets,
+            key=mx.random.split(eval_key, num_batches)[index],
         )
         teacher = mx.stop_gradient(
             model.ar_logits(batch.teacher_ids)[:, batch.supervised_slice, :]
@@ -309,6 +318,15 @@ def train_uno(
                 f"logit_absmax {logit_absmax:.1f}"
             )
 
+        if (step + 1) in set(config.checkpoint_steps):
+            target = Path(output_dir) / f"step-{step + 1}" if output_dir else None
+            if target is not None:
+                save_checkpoint(
+                    model, optimizer, step + 1, target,
+                    extra={"train_tv": record["tv"], "lr": record["lr"]},
+                )
+                echo(f"[uno] checkpoint -> {target}")
+
         if config.eval_every and (step + 1) % config.eval_every == 0:
             metrics = evaluate(model, val_windows, config, block_size=block_size)
             metrics["step"] = step + 1
@@ -354,6 +372,50 @@ def train_uno(
         save_adapter(model, output / "adapter.safetensors")
         echo(f"[uno] wrote {output}/result.json and adapter.safetensors")
     return result
+
+
+def save_checkpoint(model, optimizer, step: int, directory: Path | str,
+                    extra: dict | None = None) -> Path:
+    """Write everything needed to resume *exactly*: adapter, optimizer, RNG, position.
+
+    Act IV-U persisted only `lora_a`/`lora_b`. That is enough to evaluate a
+    checkpoint but not to continue training from it: AdamW's first and second moments
+    and the data-iterator position are both lost, so a "continuation" would silently
+    be a fresh optimizer on a different data order. Saving the optimizer state makes
+    the difference between a resumable run and a restart-in-disguise.
+    """
+    from mlx.utils import tree_flatten
+
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    save_adapter(model, directory / "adapter.safetensors")
+
+    optimizer_state = {
+        name: value
+        for name, value in tree_flatten(optimizer.state)
+        if isinstance(value, mx.array)
+    }
+    if optimizer_state:
+        mx.save_safetensors(str(directory / "optimizer.safetensors"), optimizer_state)
+
+    payload = {"step": step, "optimizer_tensors": len(optimizer_state)}
+    if extra:
+        payload.update(extra)
+    (directory / "checkpoint_state.json").write_text(json.dumps(payload, indent=2) + "\n")
+    return directory
+
+
+def load_checkpoint(model, optimizer, directory: Path | str) -> dict:
+    """Restore adapter and optimizer state written by `save_checkpoint`."""
+    from mlx.utils import tree_unflatten
+
+    directory = Path(directory)
+    load_adapter(model, directory / "adapter.safetensors")
+    optimizer_path = directory / "optimizer.safetensors"
+    if optimizer_path.is_file():
+        optimizer.state = tree_unflatten(list(mx.load(str(optimizer_path)).items()))
+        mx.eval(optimizer.state)
+    return json.loads((directory / "checkpoint_state.json").read_text())
 
 
 def save_adapter(model, path: Path | str) -> int:

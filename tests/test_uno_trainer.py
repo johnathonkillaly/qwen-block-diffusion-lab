@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import json
 
 import mlx.core as mx
 import pytest
@@ -152,3 +153,78 @@ def test_pearson_matches_known_values():
     assert pearson([1, 2, 3, 4], [8, 6, 4, 2]) == pytest.approx(-1.0)
     assert pearson([1, 1, 1], [1, 2, 3]) == 0.0
     assert pearson([1, 2], []) == 0.0
+
+
+def test_checkpoint_round_trip_restores_adapter_and_optimizer(tmp_path):
+    """A checkpoint must be resumable, not merely evaluable.
+
+    Act IV-U saved only the adapter tensors, so "continuing" a run would have meant a
+    fresh AdamW with zeroed moments on a different data order. This test exists so that
+    regression cannot happen silently.
+    """
+    import mlx.optimizers as optim
+    from mlx.utils import tree_flatten
+
+    from qdif.uno.trainer import load_checkpoint, save_checkpoint
+
+    model = build_tiny_model(seed=81)
+    model.attach_adapter(rank=4, full_attention=True, mlp=True)
+    optimizer = optim.AdamW(learning_rate=1e-3)
+
+    # take a couple of steps so the optimizer has non-trivial moments
+    import mlx.nn as nn
+
+    from qdif.uno.losses import total_variation
+    from qdif.uno.teacher import build_uno_batch
+
+    windows = random_windows(4, 24, 400, seed=82)
+    batch = build_uno_batch(windows, 4, model.mask_token_id, model.vocab_size, corruption="full")
+    teacher = mx.stop_gradient(model.ar_logits(batch.teacher_ids)[:, batch.supervised_slice, :])
+
+    def forward():
+        student = model.draft_logits(batch.student_ids, batch.lora_mask)[
+            :, batch.supervised_slice, :
+        ]
+        return total_variation(student, teacher)
+
+    for _ in range(3):
+        loss, grads = nn.value_and_grad(model.base, forward)()
+        optimizer.update(model.base, grads)
+        mx.eval(model.base.parameters(), optimizer.state)
+
+    saved = save_checkpoint(model, optimizer, 3, tmp_path / "step-3")
+    assert (saved / "adapter.safetensors").is_file()
+    assert (saved / "optimizer.safetensors").is_file()
+    state = json.loads((saved / "checkpoint_state.json").read_text())
+    assert state["step"] == 3 and state["optimizer_tensors"] > 0
+
+    reference = model.draft_logits(batch.student_ids, batch.lora_mask)
+    optimizer_reference = {
+        name: value for name, value in tree_flatten(optimizer.state)
+        if isinstance(value, mx.array)
+    }
+
+    fresh = build_tiny_model(seed=81)
+    fresh.attach_adapter(rank=4, alpha=64, full_attention=True, mlp=True)
+    fresh_optimizer = optim.AdamW(learning_rate=1e-3)
+    assert not mx.array_equal(reference, fresh.draft_logits(batch.student_ids, batch.lora_mask))
+
+    load_checkpoint(fresh, fresh_optimizer, saved)
+    assert mx.array_equal(reference, fresh.draft_logits(batch.student_ids, batch.lora_mask))
+    restored = {
+        name: value for name, value in tree_flatten(fresh_optimizer.state)
+        if isinstance(value, mx.array)
+    }
+    assert set(restored) == set(optimizer_reference)
+    for name, value in optimizer_reference.items():
+        assert mx.array_equal(value, restored[name]), f"optimizer moment {name} not restored"
+
+
+def test_training_writes_checkpoints_at_configured_steps(tmp_path):
+    model = build_tiny_model(seed=83)
+    config = _config(steps=6, checkpoint_steps=[2, 4])
+    train_uno(model, _windows(0), _windows(900), config,
+              output_dir=tmp_path, echo=lambda *a: None)
+    assert (tmp_path / "step-2" / "adapter.safetensors").is_file()
+    assert (tmp_path / "step-4" / "optimizer.safetensors").is_file()
+    assert not (tmp_path / "step-6").exists()  # 6 not requested

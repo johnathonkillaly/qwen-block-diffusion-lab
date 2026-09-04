@@ -20,6 +20,8 @@ diffusion** model, using LoRA on a mostly-frozen backbone.
 > |---|---|---|
 > | **Act IV-N** | structured **N**oise alphabet | `configs/act4/`, `src/qdif/mlx_backend/act4*.py`, `docs/ACT4_CRITERIA.md` (UPPERCASE) |
 > | **Act IV-U** | **U**no diffusion distillation | `src/qdif/uno/`, `scripts/uno.py`, `docs/act4u_*.md` |
+> | **Act IV-U2** | transactional recurrent verification | `recurrence.py`, `transaction.py`, `docs/act4u2_*.md` |
+> | **Act IV-U3** | acceptance scaling | `cost_model.py`, `scripts/u3_report.py`, `docs/act4u3_*.md` |
 >
 > Act IV-N was paused at "ready to run Stage 2" and is **untouched**. Act IV-U is a
 > separate track added later at the user's request, reproducing IFM's Uno. They share
@@ -111,6 +113,7 @@ decode.py       AR baseline and the Uno draft->verify cycle, cached and uncached
 cache_utils.py  hybrid-cache snapshot/restore (KV offset + DeltaNet state)
 recurrence.py   ACT IV-U2: DeltaNet forward that records per-token state
 transaction.py  ACT IV-U2: begin/commit_prefix/rollback; replay|snapshot|rewind
+cost_model.py   ACT IV-U3: acceptance -> forwards/token -> tok/s, fitted + inverted
 metrics.py      per-slot agreement, entropy buckets
 trainer.py      training loop, saturation guard, adapter save/load
 data.py         wikitext windows + the held-out prompt suite
@@ -138,7 +141,7 @@ HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python -m pytest -q tests/test_act3.p
 
 | set | result |
 |---|---|
-| `-m "not model"` (fast; must always pass) | **358 passed** (240 pre-Act-IV-U + 118 Uno/U2) |
+| `-m "not model"` (fast; must always pass) | **376 passed** (240 pre-Act-IV-U + 136 Uno/U2/U3) |
 | MLX model tests | **64 passed** |
 | torch v0.1 (`test_model_integration.py`) | **19 failed, 9 passed — pre-existing** |
 
@@ -306,6 +309,20 @@ HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py bench --adapter
 
 ```bash
 HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py draftability --adapter runs/uno-k4-true/adapter.safetensors --block-size 8 --eval-batches 96
+```
+
+Act IV-U3 — scaling run, then evaluate every checkpoint in ONE session:
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py train --block-size 4 --steps 3200 --lr 1e-5 --checkpoint-steps 400,800,1200,1600,2400,3200 --out runs/u3a
+```
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py u3-eval --checkpoint step-400=runs/u3a/step-400 --checkpoint step-3200=runs/u3a/step-3200 --block-sizes 2,4 --out runs/u3a/eval.json
+```
+
+```bash
+.venv-unsloth/bin/python scripts/u3_report.py --eval runs/u3a/eval.json --out results/act4u3
 ```
 
 Act IV-U tests (no checkpoint needed — they use `qdif.uno.tiny`):

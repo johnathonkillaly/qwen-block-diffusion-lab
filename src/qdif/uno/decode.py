@@ -61,6 +61,11 @@ class DecodeStats:
     entropy_per_cycle: list[float] = field(default_factory=list)
     wall_seconds: float = 0.0
     prefill_seconds: float = 0.0
+    #: Per-stage decode cost, for the Act IV-U3 empirical cost model. Measured with
+    #: mx.eval() barriers so MLX's lazy evaluation cannot shift work between stages.
+    proposal_seconds: float = 0.0
+    verify_seconds: float = 0.0
+    commit_seconds: float = 0.0
     transaction_mode: str = "replay"
     transaction: object = None
 
@@ -115,6 +120,12 @@ class DecodeStats:
             "wall_seconds": round(self.wall_seconds, 4),
             "prefill_seconds": round(self.prefill_seconds, 4),
             "tokens_per_second": round(self.tokens_per_second, 3),
+            "proposal_seconds": round(self.proposal_seconds, 5),
+            "verify_seconds": round(self.verify_seconds, 5),
+            "commit_seconds": round(self.commit_seconds, 5),
+            "proposal_ms_per_cycle": round(1000 * self.proposal_seconds / max(self.cycles, 1), 4),
+            "verify_ms_per_cycle": round(1000 * self.verify_seconds / max(self.cycles, 1), 4),
+            "commit_ms_per_cycle": round(1000 * self.commit_seconds / max(self.cycles, 1), 4),
             "transaction_mode": self.transaction_mode,
             "transaction": self.transaction.to_dict() if self.transaction else None,
         }
@@ -247,7 +258,10 @@ def uno_greedy_generate(
             seed=None if noise_seed is None else noise_seed + cycle,
         )
         mask = draft_lora_mask(1, block_size, prefix_len=0)
+        stage_start = time.perf_counter()
         draft_logits = model.draft_logits(draft_ids, mask, cache=caches)
+        mx.eval(draft_logits)
+        stats.proposal_seconds += time.perf_counter() - stage_start
         stats.forwards += 1
         stats.forward_tokens += block_size
         proposal = mx.argmax(draft_logits[0], axis=-1).tolist()
@@ -261,7 +275,10 @@ def uno_greedy_generate(
         transaction = begin_transaction(
             model, caches, mode=transaction_mode, stats=txn_stats
         )
+        stage_start = time.perf_counter()
         verify_logits = transaction.run_block(verify_ids)
+        mx.eval(verify_logits)
+        stats.verify_seconds += time.perf_counter() - stage_start
         stats.forward_tokens += int(verify_ids.shape[1])
         result = greedy_accept(proposal, verify_logits[0, 1:])
 
@@ -291,14 +308,20 @@ def uno_greedy_generate(
         generated.extend(committed)
 
         if stop_at is not None or len(generated) >= max_tokens:
+            stage_start = time.perf_counter()
             transaction.commit_prefix(min(len(committed), int(verify_ids.shape[1])))
+            mx.eval([c.state for c in caches])
+            stats.commit_seconds += time.perf_counter() - stage_start
             break
 
         # --- advance the cache to the new committed frontier -----------------------
         # Committing `m` tokens must leave the cache at `frontier + m`: the verify
         # block's first `m` tokens are exactly `[seed] + committed[:-1]`, and the last
         # committed token becomes the next uncached seed.
+        stage_start = time.perf_counter()
         transaction.commit_prefix(len(committed))
+        mx.eval([c.state for c in caches])
+        stats.commit_seconds += time.perf_counter() - stage_start
         if cache_length(caches) != frontier + len(committed):
             raise RuntimeError(
                 f"cache invariant violated after commit: "

@@ -39,11 +39,18 @@ def make_noise(
     mask_token_id: int,
     vocab_size: int,
     seed: int | None = None,
+    key: mx.array | None = None,
 ) -> mx.array:
     """Noise token ids of `shape`.
 
     `deterministic_uniform` reproduces a given block from `seed` alone, which is what
     makes adapter+verifier decoding bit-reproducible.
+
+    `key` supplies an explicit PRNG key so the caller consumes **no global RNG state**.
+    Evaluation must pass one: otherwise an eval draws from the same global stream as
+    training, and merely changing the evaluation *schedule* silently changes the
+    training trajectory. That defect made two runs with identical seeds diverge, and
+    was caught by pre-registered gate U3-0b.
     """
     if mode not in NOISE_MODES:
         raise ValueError(f"Unsupported noise mode {mode!r}; expected one of {NOISE_MODES}")
@@ -52,7 +59,7 @@ def make_noise(
     if mode == "mask":
         return mx.full(shape, high, dtype=mx.int32)
     if mode == "random_uniform":
-        return mx.random.randint(low, high, shape).astype(mx.int32)
+        return mx.random.randint(low, high, shape, key=key).astype(mx.int32)
 
     if seed is None:
         raise ValueError("deterministic_uniform noise requires a seed")

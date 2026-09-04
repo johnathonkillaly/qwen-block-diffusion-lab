@@ -164,3 +164,41 @@ def test_seed_position_has_exactly_zero_loss():
     assert float(total_variation(student[:, :1], teacher[:, :1]).item()) == 0.0
     # ... and the adapted rows must genuinely differ, or the test is vacuous.
     assert float(total_variation(student[:, 1:], teacher[:, 1:]).item()) > 0.0
+
+
+def test_explicit_key_makes_batch_construction_reproducible():
+    windows = random_windows(4, 24, 400, seed=91)
+    key = mx.random.key(1234)
+    a = build_uno_batch(windows, 4, 480, 512, corruption="uniform", key=key)
+    b = build_uno_batch(windows, 4, 480, 512, corruption="uniform", key=key)
+    assert mx.array_equal(a.student_ids, b.student_ids)
+    assert mx.array_equal(a.corrupted, b.corrupted)
+
+
+def test_keyed_batch_construction_consumes_no_global_rng():
+    """Evaluation must not perturb the training noise stream.
+
+    `evaluate()` builds batches too. While it drew from the *global* MLX RNG, changing
+    only the evaluation schedule silently changed the training trajectory: two runs
+    with identical seeds and identical training configs diverged, which pre-registered
+    gate U3-0b caught. Evaluation now passes an explicit key, so the global stream
+    advances only for training.
+    """
+    windows = random_windows(4, 24, 400, seed=92)
+    key = mx.random.key(77)
+
+    mx.random.seed(5)
+    reference = mx.random.uniform(shape=(4,))
+
+    mx.random.seed(5)
+    for _ in range(3):
+        build_uno_batch(windows, 4, 480, 512, corruption="uniform", key=key)
+    after_keyed = mx.random.uniform(shape=(4,))
+    assert mx.array_equal(reference, after_keyed), "keyed batch consumed global RNG"
+
+    # ...and without a key it *does* advance the global stream, so the test is not vacuous
+    mx.random.seed(5)
+    for _ in range(3):
+        build_uno_batch(windows, 4, 480, 512, corruption="uniform")
+    after_global = mx.random.uniform(shape=(4,))
+    assert not mx.array_equal(reference, after_global)
