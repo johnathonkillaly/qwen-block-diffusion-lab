@@ -68,6 +68,7 @@ class WindowSource:
         self._rng = np.random.default_rng(self.seed)
         self._order = self._rng.permutation(len(self.windows))
         self._cursor = 0
+        self._draws = 0
 
     def __iter__(self):
         return self
@@ -78,6 +79,7 @@ class WindowSource:
             self._cursor = 0
         picked = self._order[self._cursor : self._cursor + self.batch_size]
         self._cursor += self.batch_size
+        self._draws += 1
         return mx.array(self.windows[picked].astype(np.int32))
 
     @property
@@ -87,6 +89,71 @@ class WindowSource:
     @property
     def num_tokens(self) -> int:
         return int(self.windows.size)
+
+    # ------------------------------------------------------------ resumability
+
+    @property
+    def draws(self) -> int:
+        """How many batches have been handed out. The data-position state."""
+        return self._draws
+
+    def fast_forward(self, draws: int) -> "WindowSource":
+        """Advance by `draws` batches without materialising them.
+
+        This is how Act IV-U3's checkpoints are made resumable after the fact. They
+        recorded the training step but not the data cursor -- and because the source is
+        a pure function of `(seed, number of draws)`, replaying `step` draws recovers
+        the exact position rather than approximating it. Reshuffles are reproduced
+        because the reshuffle happens inside this loop, on the same `_rng`.
+        """
+        if draws < 0:
+            raise ValueError(f"cannot fast-forward by {draws} draws")
+        for _ in range(draws):
+            if self._cursor + self.batch_size > len(self._order):
+                self._order = self._rng.permutation(len(self.windows))
+                self._cursor = 0
+            self._cursor += self.batch_size
+            self._draws += 1
+        return self
+
+    def state_dict(self) -> dict:
+        """Everything needed to resume this iterator exactly."""
+        return {
+            "seed": int(self.seed),
+            "batch_size": int(self.batch_size),
+            "num_windows": int(len(self.windows)),
+            "draws": int(self._draws),
+            "cursor": int(self._cursor),
+            "order_digest": int(self._order[:8].sum()) if len(self._order) else 0,
+        }
+
+    def load_state_dict(self, state: dict) -> "WindowSource":
+        """Restore by replaying `draws` batches from a fresh iterator.
+
+        Replay rather than pickling numpy's bit generator: it is verifiable (the cursor
+        and the order digest must both land where they were saved) and it survives a
+        numpy version change.
+        """
+        if int(state["num_windows"]) != len(self.windows):
+            raise ValueError(
+                f"checkpoint was taken over {state['num_windows']} windows, "
+                f"this source has {len(self.windows)}"
+            )
+        if int(state["batch_size"]) != int(self.batch_size):
+            raise ValueError(
+                f"checkpoint batch size {state['batch_size']} != {self.batch_size}"
+            )
+        self.__post_init__()
+        self.fast_forward(int(state["draws"]))
+        restored = self.state_dict()
+        if restored["cursor"] != int(state["cursor"]) or (
+            restored["order_digest"] != int(state["order_digest"])
+        ):
+            raise ValueError(
+                f"data-position restore did not land where it was saved: "
+                f"{restored} != {state}"
+            )
+        return self
 
 
 def build_sources(

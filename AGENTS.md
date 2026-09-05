@@ -22,6 +22,7 @@ diffusion** model, using LoRA on a mostly-frozen backbone.
 > | **Act IV-U** | **U**no diffusion distillation | `src/qdif/uno/`, `scripts/uno.py`, `docs/act4u_*.md` |
 > | **Act IV-U2** | transactional recurrent verification | `recurrence.py`, `transaction.py`, `docs/act4u2_*.md` |
 > | **Act IV-U3** | acceptance scaling | `cost_model.py`, `scripts/u3_report.py`, `docs/act4u3_*.md` |
+> | **Act IV-U4** | horizon scaling | `rng.py`, `scripts/u4_report.py`, `docs/act4u4_*.md` |
 >
 > Act IV-N was paused at "ready to run Stage 2" and is **untouched**. Act IV-U is a
 > separate track added later at the user's request, reproducing IFM's Uno. They share
@@ -113,9 +114,11 @@ decode.py       AR baseline and the Uno draft->verify cycle, cached and uncached
 cache_utils.py  hybrid-cache snapshot/restore (KV offset + DeltaNet state)
 recurrence.py   ACT IV-U2: DeltaNet forward that records per-token state
 transaction.py  ACT IV-U2: begin/commit_prefix/rollback; replay|snapshot|rewind
-cost_model.py   ACT IV-U3: acceptance -> forwards/token -> tok/s, fitted + inverted
+cost_model.py   ACT IV-U3/U4: acceptance -> forwards/token -> tok/s; v2 adds a
+                measured cycle-overhead term, survival curves and slot economics
+rng.py          ACT IV-U4: named, separated PRNG streams keyed on (seed, stream, step)
 metrics.py      per-slot agreement, entropy buckets
-trainer.py      training loop, saturation guard, adapter save/load
+trainer.py      training loop, saturation guard, adapter save/load, exact resume
 data.py         wikitext windows + the held-out prompt suite
 tiny.py         a small *real* hybrid model for fast tests
 ```
@@ -141,7 +144,7 @@ HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python -m pytest -q tests/test_act3.p
 
 | set | result |
 |---|---|
-| `-m "not model"` (fast; must always pass) | **376 passed** (240 pre-Act-IV-U + 136 Uno/U2/U3) |
+| `-m "not model"` (fast; must always pass) | **423 passed** (240 pre-Act-IV-U + 183 Uno/U2/U3/U4) |
 | MLX model tests | **64 passed** |
 | torch v0.1 (`test_model_integration.py`) | **19 failed, 9 passed — pre-existing** |
 
@@ -219,7 +222,38 @@ actually published, tagged confirmed / inferred / our approximation),
 [`docs/act4u_preregistered_criteria.md`](docs/act4u_preregistered_criteria.md) (frozen),
 [`docs/act4u_results.md`](docs/act4u_results.md).
 
-**Status: Act IV-U complete; Act IV-U2 (transactional state) complete and successful.**
+**Status: Act IV-U, U2, U3 and U4 all complete.** U4 (horizon scaling) is the most
+recent: [`docs/act4u4_preregistered_criteria.md`](docs/act4u4_preregistered_criteria.md)
+(frozen), [`docs/act4u4_results.md`](docs/act4u4_results.md), `results/act4u4/`.
+
+### Act IV-U4 verdict: `K4 IS THE PRACTICAL FRONTIER`
+
+K=4 reached pre-registered saturation at step 6400 — 9600 further steps (3x U3's whole
+budget) moved teacher-forced agreement +0.008 against a 2 sd of 0.011. K=8 learns and
+commits more tokens per forward (TPF 1.4664 vs K=4's 1.4314) and beats AR at 1.074x,
+but is **0.910x K=4** on wall clock: it pays +11.9% per cycle for +2.4% TPF. Only
+**three speculative slots pay for themselves** at any block size tested. 11 of 13
+gates pass; the two failures are the result.
+
+Best measured: **K=4, 59.08 tok/s, 1.195x AR**, lossless greedy, frozen backbone.
+
+**The finding that was not pre-registered, and the one worth chasing:** 3200 steps of
+K=8/K=6 training improved *K=4* decoding by more (accept +0.030, ~7 sd) than 9600
+further steps of K=4 training did (+0.010). A longer block may be a better *training*
+objective than it is an *inference* configuration. That is U5's first experiment, with
+the obvious control being 3200 more K=4 steps.
+
+Two methodological corrections U4 makes to earlier Acts, both in the conservative
+direction:
+
+* **U3's "+1/+2 offsets" were speculative-slot indices.** Future offset `+j` is
+  supervised slot `j-1`, and `+1` is the adapter-off seed row (agreement 1.0 by
+  construction). U3's "+1" is U4's "+2". The U3 finding is unchanged; the labels move.
+* **U3's "repeat noise 1.95 tok/s" was ~12x too large.** It drew fresh global-RNG
+  draft noise per repeat, so repeats decoded different sequences. Keyed
+  (`src/qdif/uno/rng.py`), repeats are bit-identical and the jitter is 0.05-0.22
+  tok/s. Gate U3-4 was therefore harder than intended: **U3's conclusion stands and
+  was understated.**
 
 ### Act IV-U verdict: `ALGORITHMIC SIGNAL, NO SPEEDUP`
 
@@ -323,6 +357,30 @@ HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py u3-eval --check
 
 ```bash
 .venv-unsloth/bin/python scripts/u3_report.py --eval runs/u3a/eval.json --out results/act4u3
+```
+
+Act IV-U4 — horizon scaling. Resume is **exact**: the adapter, the AdamW moments, the
+step, the data position and the noise stream all continue, and
+`tests/test_uno_resume.py` proves a split run is bitwise-identical to an
+uninterrupted one.
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py train --block-size 4 --steps 12800 --resume-from runs/u3a/step-3200 --checkpoint-steps 4800,6400,8000,9600,11200,12800 --eval-every 100 --eval-batches 8 --out runs/u4a
+```
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py u4-eval --checkpoint step-3200=runs/u3a/step-3200 --checkpoint step-12800=runs/u4a/step-12800 --block-sizes 2,4,8 --eval-batches 64 --out runs/u4a/eval.json
+```
+
+```bash
+.venv-unsloth/bin/python scripts/u4_report.py --eval runs/u4a/eval.json --training runs/u4a/result.json --out results/act4u4
+```
+
+Harness calibration (three replicates of one frozen checkpoint, differing only in the
+noise seeds) is how U4's thresholds were set — rerun it before changing any of them:
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py u4-eval --checkpoint step-3200=runs/u3a/step-3200 --block-sizes 2,4,8 --eval-batches 64 --noise-stream-seed 77000001 --eval-noise-seed 44000001 --out runs/u4-calib/rep2.json
 ```
 
 Act IV-U tests (no checkpoint needed — they use `qdif.uno.tiny`):

@@ -81,11 +81,17 @@ def build_draft_block(
     mask_token_id: int,
     vocab_size: int,
     seed: int | None = None,
+    key: mx.array | None = None,
 ) -> mx.array:
     """`[seed, noise_1, ..., noise_{L-1}]`, one row per sequence.
 
     The seed is the last committed token. Its row runs with the adapter **off**, so
     the model's prediction at that position is the exact frozen-AR next token.
+
+    `key` makes the draft block a function of the caller's stream rather than of the
+    global RNG. Benchmarking needs it: without one, two checkpoints measured in the
+    same session see *different* draft noise, so part of any acceptance difference
+    between them is a difference in the noise they happened to be shown.
     """
     if block_size < 1:
         raise ValueError(f"block_size must be >= 1, got {block_size}")
@@ -94,7 +100,7 @@ def build_draft_block(
     if block_size == 1:
         return seeds
     noise = make_noise(
-        (batch, block_size - 1), mode, mask_token_id, vocab_size, seed=seed
+        (batch, block_size - 1), mode, mask_token_id, vocab_size, seed=seed, key=key
     )
     return mx.concatenate([seeds, noise], axis=1)
 

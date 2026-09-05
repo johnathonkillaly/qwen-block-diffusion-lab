@@ -39,6 +39,7 @@ import mlx.core as mx
 
 from .cache_utils import cache_length, restore_caches, snapshot_caches
 from .noise import build_draft_block, draft_lora_mask
+from .rng import BENCH_NOISE, stream_key
 from .transaction import TransactionStats, begin_transaction
 from .verifier import greedy_accept
 
@@ -66,6 +67,17 @@ class DecodeStats:
     proposal_seconds: float = 0.0
     verify_seconds: float = 0.0
     commit_seconds: float = 0.0
+    #: Everything in a cycle that is not one of the three stages above: cache
+    #: snapshot/restore, building the draft block, pulling the proposal back to the
+    #: host, the greedy accept test, and the entropy probe. Act IV-U3's cost model
+    #: omitted this term and over-predicted throughput by +3.9% to +10.2% with a
+    #: consistent sign, which is the signature of a missing additive cost rather than
+    #: of noise. Timed here directly instead of being inferred from the residual.
+    overhead_seconds: float = 0.0
+    #: Wall time inside the cycle loop, measured end to end. The gap between this and
+    #: (proposal + verify + commit + overhead) is *unattributed* time, and is reported
+    #: rather than folded into a stage.
+    cycle_seconds: float = 0.0
     transaction_mode: str = "replay"
     transaction: object = None
 
@@ -103,6 +115,18 @@ class DecodeStats:
     def tokens_per_second(self) -> float:
         return self.tokens / self.wall_seconds if self.wall_seconds else 0.0
 
+    @property
+    def unattributed_seconds(self) -> float:
+        """Cycle time belonging to no timed region. Should be near zero."""
+        return max(
+            0.0,
+            self.cycle_seconds
+            - self.proposal_seconds
+            - self.verify_seconds
+            - self.commit_seconds
+            - self.overhead_seconds,
+        )
+
     def to_dict(self) -> dict:
         return {
             "tokens": self.tokens,
@@ -123,9 +147,16 @@ class DecodeStats:
             "proposal_seconds": round(self.proposal_seconds, 5),
             "verify_seconds": round(self.verify_seconds, 5),
             "commit_seconds": round(self.commit_seconds, 5),
+            "overhead_seconds": round(self.overhead_seconds, 5),
+            "cycle_seconds": round(self.cycle_seconds, 5),
+            "unattributed_seconds": round(self.unattributed_seconds, 5),
             "proposal_ms_per_cycle": round(1000 * self.proposal_seconds / max(self.cycles, 1), 4),
             "verify_ms_per_cycle": round(1000 * self.verify_seconds / max(self.cycles, 1), 4),
             "commit_ms_per_cycle": round(1000 * self.commit_seconds / max(self.cycles, 1), 4),
+            "overhead_ms_per_cycle": round(1000 * self.overhead_seconds / max(self.cycles, 1), 4),
+            "unattributed_ms_per_cycle": round(
+                1000 * self.unattributed_seconds / max(self.cycles, 1), 4
+            ),
             "transaction_mode": self.transaction_mode,
             "transaction": self.transaction.to_dict() if self.transaction else None,
         }
@@ -136,6 +167,19 @@ def _stop_index(tokens: list[int], stop_ids: set[int]) -> int | None:
         if token in stop_ids:
             return index
     return None
+
+
+def _cycle_key(noise_stream_seed: int, cycle: int) -> mx.array:
+    """The draft-noise key for cycle `cycle`, without consuming global RNG.
+
+    Derived from the cycle *index* by hashing rather than by chaining splits, so cycle
+    `c` sees the same noise regardless of how many cycles preceded it and regardless of
+    how far the generation has got. Two checkpoints that accept different numbers of
+    tokens therefore still meet identical noise at every cycle index, which is the
+    property that makes their acceptance comparable. Chaining would not give that, and
+    would also make the per-cycle cost grow with the cycle count.
+    """
+    return stream_key(noise_stream_seed, BENCH_NOISE, cycle)
 
 
 # --------------------------------------------------------------------------- AR
@@ -206,6 +250,7 @@ def uno_greedy_generate(
     stop_ids: set[int] | None = None,
     use_cache: bool = True,
     transaction_mode: str = "replay",
+    noise_stream_seed: int | None = None,
 ) -> tuple[list[int], DecodeStats]:
     """Uno draft→verify decoding. Greedy, so the output is meant to be *identical*
     to `ar_greedy_generate` — the adapter changes how fast tokens arrive, never
@@ -213,6 +258,12 @@ def uno_greedy_generate(
 
     Any divergence from the AR baseline is a bug in this function or in the verifier,
     not a property of the adapter. Gate 3 tests exactly that.
+
+    `noise_stream_seed` fixes the draft noise to an explicit stream. Pass the *same* key when
+    comparing two adapter checkpoints: otherwise each is measured against draft noise
+    the other never saw, and a slice of the acceptance difference between them is the
+    noise draw rather than the training. Without it the draw comes from the global MLX
+    RNG, which is neither reproducible nor shared across checkpoints.
     """
     if block_size < 1:
         raise ValueError(f"block_size must be >= 1, got {block_size}")
@@ -244,7 +295,9 @@ def uno_greedy_generate(
     cycle = 0
 
     while len(generated) < max_tokens:
+        cycle_start = time.perf_counter()
         cycle += 1
+        overhead_start = cycle_start
         snapshot = snapshot_caches(caches)
         frontier = cache_length(caches)
 
@@ -256,14 +309,17 @@ def uno_greedy_generate(
             model.mask_token_id,
             model.vocab_size,
             seed=None if noise_seed is None else noise_seed + cycle,
+            key=None if noise_stream_seed is None else _cycle_key(noise_stream_seed, cycle),
         )
         mask = draft_lora_mask(1, block_size, prefix_len=0)
+        stats.overhead_seconds += time.perf_counter() - overhead_start
         stage_start = time.perf_counter()
         draft_logits = model.draft_logits(draft_ids, mask, cache=caches)
         mx.eval(draft_logits)
         stats.proposal_seconds += time.perf_counter() - stage_start
         stats.forwards += 1
         stats.forward_tokens += block_size
+        overhead_start = time.perf_counter()
         proposal = mx.argmax(draft_logits[0], axis=-1).tolist()
         proposal = [int(t) for t in proposal]  # [c, p_1, ..., p_{L-1}]
         restore_caches(caches, snapshot)
@@ -275,11 +331,13 @@ def uno_greedy_generate(
         transaction = begin_transaction(
             model, caches, mode=transaction_mode, stats=txn_stats
         )
+        stats.overhead_seconds += time.perf_counter() - overhead_start
         stage_start = time.perf_counter()
         verify_logits = transaction.run_block(verify_ids)
         mx.eval(verify_logits)
         stats.verify_seconds += time.perf_counter() - stage_start
         stats.forward_tokens += int(verify_ids.shape[1])
+        overhead_start = time.perf_counter()
         result = greedy_accept(proposal, verify_logits[0, 1:])
 
         row = verify_logits[0, 0].astype(mx.float32)
@@ -287,6 +345,7 @@ def uno_greedy_generate(
         stats.entropy_per_cycle.append(
             float(-mx.sum(mx.exp(log_probs) * log_probs).item())
         )
+        stats.overhead_seconds += time.perf_counter() - overhead_start
 
         stats.cycles += 1
         stats.accepted_specs += result.accepted_specs
@@ -312,6 +371,7 @@ def uno_greedy_generate(
             transaction.commit_prefix(min(len(committed), int(verify_ids.shape[1])))
             mx.eval([c.state for c in caches])
             stats.commit_seconds += time.perf_counter() - stage_start
+            stats.cycle_seconds += time.perf_counter() - cycle_start
             break
 
         # --- advance the cache to the new committed frontier -----------------------
@@ -328,6 +388,7 @@ def uno_greedy_generate(
                 f"{cache_length(caches)} != {frontier + len(committed)}"
             )
         seed = committed[-1]
+        stats.cycle_seconds += time.perf_counter() - cycle_start
 
     # Forward accounting comes from the transaction, which is the only thing that
     # knows whether a commit needed a replay. `stats.forwards` counted the prefill and

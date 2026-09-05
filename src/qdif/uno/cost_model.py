@@ -35,21 +35,42 @@ from dataclasses import dataclass
 
 @dataclass
 class CycleCost:
-    """Measured per-cycle stage costs, in milliseconds."""
+    """Measured per-cycle stage costs, in milliseconds.
+
+    ## v2: the overhead term
+
+    Act IV-U3 modelled a cycle as `proposal + verify + commit` and over-predicted
+    throughput at **every** checkpoint, by +3.9% to +10.2% (mean +7.7%). A residual
+    that never changes sign is not noise; it is a cost the model does not have a term
+    for. The missing work is the part of the cycle that is neither a forward nor a
+    commit: snapshotting and restoring the caches, building the draft block, pulling
+    the proposal back to the host, running the greedy accept test, and the entropy
+    probe.
+
+    `overhead_ms` is that term, and it is **measured**, not fitted. `decode.py` times
+    those regions directly and reports them as `overhead_ms_per_cycle`. Fitting a
+    correction factor to U3's residual would have produced a model that predicts U3
+    perfectly and explains nothing; this one can be wrong, which is the point.
+
+    `overhead_ms` defaults to 0.0 so that U3's stage timings still evaluate under the
+    v1 model and its bias stays visible for comparison.
+    """
 
     proposal_ms: float
     verify_ms: float
     commit_ms: float
+    overhead_ms: float = 0.0
 
     @property
     def total_ms(self) -> float:
-        return self.proposal_ms + self.verify_ms + self.commit_ms
+        return self.proposal_ms + self.verify_ms + self.commit_ms + self.overhead_ms
 
     def to_dict(self) -> dict:
         return {
             "proposal_ms": round(self.proposal_ms, 4),
             "verify_ms": round(self.verify_ms, 4),
             "commit_ms": round(self.commit_ms, 4),
+            "overhead_ms": round(self.overhead_ms, 4),
             "total_ms": round(self.total_ms, 4),
         }
 
@@ -96,9 +117,36 @@ def geometric_distribution(block_size: int, per_slot_accept: float) -> dict[int,
 def predicted_tokens_per_second(
     block_size: int, distribution: dict[int, float], cost: CycleCost
 ) -> float:
-    """E[tokens] / E[seconds] for one cycle."""
+    """Steady-state E[tokens] / E[seconds] for one cycle. Excludes prefill."""
     tokens = expected_committed(block_size, distribution)
     return tokens / (cost.total_ms / 1000.0)
+
+
+def predicted_end_to_end_tokens_per_second(
+    block_size: int,
+    distribution: dict[int, float],
+    cost: CycleCost,
+    prefill_ms: float,
+    tokens: int,
+) -> float:
+    """Throughput as the benchmark actually reports it: prefill included.
+
+    The second half of the v1 bias. `tokens_per_second` in `DecodeStats` is
+    `tokens / wall_seconds`, and `wall_seconds` contains the prompt prefill — one full
+    forward over the whole prompt, before any cycle runs. The v1 model predicted a
+    pure steady-state rate and was compared against that end-to-end number, so it
+    over-predicted by roughly the prefill's share of the run: at 48 generated tokens
+    and a ~15-token prompt that is a few percent, in the same direction, every time.
+
+    Separating the two is what makes the residual diagnostic. If the steady-state
+    prediction is accurate and only the end-to-end one is off, the cycle model is fine
+    and the harness is amortising a fixed cost; if both are off, the cycle model is
+    missing work. Both are reported.
+    """
+    per_cycle = expected_committed(block_size, distribution)
+    cycles = tokens / per_cycle
+    total_ms = prefill_ms + cycles * cost.total_ms
+    return tokens / (total_ms / 1000.0) if total_ms > 0 else 0.0
 
 
 def predicted_tpf(block_size: int, distribution: dict[int, float]) -> float:
@@ -180,6 +228,126 @@ def speedup_table(
             "required_tpf": round(predicted_tpf(block_size, distribution), 4),
         })
     return rows
+
+
+# ----------------------------------------------------------------- U4 analyses
+
+
+def survival_curve(block_size: int, distribution: dict[int, float]) -> dict:
+    """`P(accepted >= j)` — the horizon survival curve (Act IV-U4 §21).
+
+    Two curves, because Act IV-U4 §19 is right that the naming matters:
+
+    * `accepted_specs` — `P(a >= j)` over speculative slots, `j = 1 … L-1`.
+    * `committed_tokens` — `P(c >= j)` over tokens actually committed, `j = 1 … L+1`.
+
+    They are one substitution apart. A cycle that accepts `a` speculative tokens
+    commits `a + 2` (the clean token, the accepted run, and the free lookahead) — and
+    that holds at `a = L-1` too, where the full-block rule gives `L + 1 = (L-1) + 2`.
+    So `E[c] = E[a] + 2` exactly, and since `E[X] = Σ_{j>=1} P(X >= j)` for a
+    non-negative integer variable, the area under either curve *is* the corresponding
+    expectation rather than merely relating to it.
+
+    The consequence used in `marginal_slot_value`: the marginal contribution of
+    speculative slot `j` to committed tokens per cycle is exactly `P(a >= j)`.
+    """
+    total = sum(distribution.values())
+    if total <= 0:
+        raise ValueError("acceptance distribution must have positive mass")
+    offered = block_size - 1
+    accepted = {
+        j: sum(w for a, w in distribution.items() if a >= j) / total
+        for j in range(1, offered + 1)
+    }
+    committed = {
+        j: sum(
+            w
+            for a, w in distribution.items()
+            if committed_tokens(block_size, a) >= j
+        )
+        / total
+        for j in range(1, block_size + 2)
+    }
+    mean_accepted = sum(accepted.values())
+    return {
+        "block_size": block_size,
+        "accepted_specs": {str(j): round(p, 5) for j, p in accepted.items()},
+        "committed_tokens": {str(j): round(p, 5) for j, p in committed.items()},
+        "mean_accepted_specs": round(mean_accepted, 5),
+        "mean_committed_tokens": round(mean_accepted + 2.0, 5),
+        "area_check": round(
+            abs(mean_accepted + 2.0 - expected_committed(block_size, distribution)), 9
+        ),
+    }
+
+
+def marginal_slot_value(
+    block_size: int,
+    distribution: dict[int, float],
+    cost: CycleCost,
+    ms_per_extra_slot: float,
+) -> list[dict]:
+    """When does one more draft position stop paying for itself? (§22)
+
+    Extending a block from `L` to `L+1` adds `P(a >= L)` expected committed tokens and
+    `ms_per_extra_slot` milliseconds. Throughput improves iff
+
+        P(a >= L)  >  E[committed at L] * (delta_ms / total_ms at L)
+
+    i.e. the extra slot must contribute a larger *fraction* of the tokens than it does
+    of the time. `ms_per_extra_slot` is estimated by regressing measured cycle cost on
+    block size across the K we actually ran — it is not a guess, and it is reported.
+
+    This is measurement, not routing. Act IV-U4 §23 keeps dynamic K out of scope; the
+    point here is to locate the frontier, not to schedule around it.
+    """
+    survival = survival_curve(block_size, distribution)["accepted_specs"]
+    total = cost.total_ms
+    rows = []
+    running = 2.0
+    for slot in range(1, block_size):
+        gain = survival[str(slot)]
+        # Cost/tokens at the block size for which this slot is the *last* one.
+        cost_at = total - (block_size - slot) * ms_per_extra_slot
+        break_even = running * (ms_per_extra_slot / cost_at) if cost_at > 0 else float("inf")
+        rows.append({
+            "slot": slot,
+            "marginal_tokens": round(gain, 5),
+            "break_even_tokens": round(break_even, 5),
+            "pays_for_itself": bool(gain > break_even),
+            "cycle_ms_at_this_block": round(cost_at, 4),
+        })
+        running += gain
+    return rows
+
+
+def slot_cost_regression(samples: list[tuple[int, float]]) -> dict:
+    """Least-squares `cycle_ms = intercept + slope * block_size` over measured points.
+
+    `slope` is the millisecond price of one more draft position — the quantity
+    `marginal_slot_value` needs and the one U3's model had no way to see, because it
+    only ever looked at one block size at a time.
+    """
+    if len(samples) < 2:
+        raise ValueError("need at least two block sizes to estimate a slope")
+    n = len(samples)
+    mean_x = sum(x for x, _ in samples) / n
+    mean_y = sum(y for _, y in samples) / n
+    sxx = sum((x - mean_x) ** 2 for x, _ in samples)
+    if sxx == 0:
+        raise ValueError("all samples share one block size")
+    sxy = sum((x - mean_x) * (y - mean_y) for x, y in samples)
+    slope = sxy / sxx
+    intercept = mean_y - slope * mean_x
+    predicted = [intercept + slope * x for x, _ in samples]
+    ss_res = sum((y - p) ** 2 for (_, y), p in zip(samples, predicted))
+    ss_tot = sum((y - mean_y) ** 2 for _, y in samples)
+    return {
+        "intercept_ms": round(intercept, 4),
+        "ms_per_slot": round(slope, 4),
+        "r_squared": round(1.0 - ss_res / ss_tot, 5) if ss_tot > 0 else None,
+        "samples": [[x, round(y, 4)] for x, y in samples],
+    }
 
 
 def ceiling(block_size: int, cost: CycleCost, ar_tokens_per_second: float) -> dict:

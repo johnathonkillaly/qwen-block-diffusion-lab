@@ -130,6 +130,50 @@ the frozen model's draftability gap, the *least* draftable quintile improved mos
 exploiting regions that were already easy — and this flattens the gap-acceptance
 correlation, which is why that correlation does not strengthen with training.
 
+**The useful parallel horizon is four tokens, and the limit is economic.** Act IV-U4
+scaled K=4 to 12,800 steps (3x U3's whole budget) and then trained K=8 two ways. K=4
+hit its pre-registered saturation condition at step 6400: the remaining 6400 steps
+moved held-out agreement +0.008 against a measured 2 sd of 0.011. K=8 does learn --
+its agreement at offsets +5/+6 is 0.14, several times the untrained control's 0.023 --
+and it commits **more** tokens per forward than K=4 (TPF 1.4664 vs 1.4314), yet it is
+**0.910x K=4** on wall clock, because it pays +11.9% per cycle for +2.4% TPF. The
+marginal analysis says why: a draft slot must earn 1.5 ms, and `P(accepted >= 4)` is
+0.059 against a break-even of 0.088. Only **three speculative slots pay for themselves
+at any block size tested**, which is exactly a block of four.
+See [docs/act4u4_results.md](docs/act4u4_results.md).
+
+**A longer training block improved *short*-block decoding more than more short-block
+training did.** 3200 steps at K=8 (or K=6 then K=8) raised K=4 free-running acceptance
+0.3226 -> 0.3525 (~7 sd) and K=4 TPF 1.4035 -> 1.4314, after 9600 steps of K=4
+training had left both flat. Paired, same session, same noise stream. Not
+pre-registered and measured once, so it is a hypothesis rather than a result -- but it
+separates "best block size to train at" from "best block size to decode at", which
+Act IV-U4 had assumed were one question.
+
+**The official Uno curriculum's intermediate stage does real work.** Going 4 -> 6 -> 8
+beat going 4 -> 8 directly on every aggregate at equal step count: held-out TV 1.3046
+vs 1.3191, agreement 0.1992 vs 0.1869, mean accepted prefix 1.143 vs 1.099. The direct
+arm's long offsets did not move at all. Confirmed from
+`ifm-ai/uno@training/configs/uno_3epoch_curriculum.yaml` that IFM run six equal-token
+stages `2,4,6,8,12,16`, and from `training/trainer.py` that a stage transition changes
+only the block size -- optimizer, adapter and LR schedule all carry over.
+
+**Draftability does not become more predictive further out.** Pre-registered as a
+hypothesis and refuted: mean `|r(gap, acceptance)|` is 0.068 at offsets +6..+8 against
+0.128 at +2..+3. Pooled, the gap still beats entropy (-0.167 vs -0.071) with a clean
+monotone quintile gradient, so it predicts acceptance -- just not increasingly with
+horizon. Three evaluations of an *identical* adapter move these per-offset
+correlations by +-0.05, so most of the offset structure is noise.
+
+**A "repeat noise" figure can be dominated by the noise draw rather than the clock.**
+Act IV-U3 measured 1.44-1.99 tok/s of apparent timing jitter by re-running each prompt
+three times -- but each repeat drew fresh global-RNG draft noise, so the repeats
+decoded *different token sequences*. With the stream keyed per cycle, repeats are
+bit-identical decodes and the residual jitter is 0.05-0.22 tok/s, ~12x smaller. U3's
+gate required beating a baseline by more than the inflated figure, so it was harder
+than intended: **that conclusion stands and was understated.** The same keying makes
+teacher-forced metrics bit-reproducible across sessions a day apart.
+
 **Evaluation can silently corrupt a training run through a shared RNG.** Batch
 construction drew its corruption rate and noise tokens from the *global* MLX stream,
 which training also draws from. Changing only `eval_every` and `eval_batches` therefore
@@ -260,3 +304,14 @@ Worth doing now that a healthy baseline exists:
    would make the model's canvas readout coherent everywhere, which matters if you ever
    want to *re*-mask.
 5. Denoising-step sweep against quality; self-conditioning; scaling to 27B.
+
+For the Act IV-U (Uno) track, after U4:
+
+6. **Does training at K=8 and decoding at K=4 beat training at K=4?** U4 found this on
+   one unplanned comparison. It needs its own arm and the obvious control (3200 more
+   K=4 steps from step-12800, which U4-A's plateau predicts will do nothing).
+7. **The official curriculum from the start** (`2 -> 4 -> 6 -> 8`) rather than bolted
+   on after 12,800 fixed-K=4 steps.
+8. **Dynamic-K routing (U5)**, now properly informed: best K is 4, K=4 training
+   saturates, and the per-slot economics are measured. The survival curve says a router
+   would have to predict, per cycle, whether *slot 3* will be accepted.

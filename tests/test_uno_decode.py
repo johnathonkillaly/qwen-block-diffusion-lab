@@ -211,3 +211,143 @@ def test_snapshot_removes_every_replay_forward(block_size):
     assert snap_stats.forwards == 1 + 2 * snap_stats.cycles
     assert snap_stats.forwards < replay_stats.forwards
     assert snap_stats.tokens_per_forward > replay_stats.tokens_per_forward
+
+
+# ------------------------------------ Act IV-U4: benchmark noise as a named stream
+
+
+@pytest.mark.parametrize("block_size", [2, 4, 8])
+def test_bench_noise_stream_makes_decoding_reproducible(block_size):
+    """Same seed, same draft noise, same acceptance — across separate calls."""
+    model = _model(trained=True)
+    a_tokens, a = uno_greedy_generate(
+        model, PROMPT, max_tokens=24, block_size=block_size,
+        transaction_mode="snapshot", noise_stream_seed=1234,
+    )
+    b_tokens, b = uno_greedy_generate(
+        model, PROMPT, max_tokens=24, block_size=block_size,
+        transaction_mode="snapshot", noise_stream_seed=1234,
+    )
+    assert a_tokens == b_tokens
+    assert a.accepted_per_cycle == b.accepted_per_cycle
+    assert a.committed_per_cycle == b.committed_per_cycle
+
+
+def test_bench_noise_stream_consumes_no_global_rng():
+    """Benchmarking one checkpoint must not shift the noise the next one sees."""
+    model = _model(trained=True)
+    mx.random.seed(17)
+    reference = mx.random.uniform(shape=(4,))
+
+    mx.random.seed(17)
+    for _ in range(3):
+        uno_greedy_generate(model, PROMPT, max_tokens=16, block_size=4,
+                            transaction_mode="snapshot", noise_stream_seed=99)
+    assert mx.array_equal(reference, mx.random.uniform(shape=(4,)))
+
+    # non-vacuity: without a stream seed the draft noise *does* move the global stream
+    mx.random.seed(17)
+    for _ in range(3):
+        uno_greedy_generate(model, PROMPT, max_tokens=16, block_size=4,
+                            transaction_mode="snapshot")
+    assert not mx.array_equal(reference, mx.random.uniform(shape=(4,)))
+
+
+def test_different_bench_seeds_give_different_noise():
+    """Asserted on the draft blocks, not on acceptance.
+
+    The tiny fixture's random adapter accepts nothing at K=8, so `accepted_per_cycle`
+    is all zeros whatever the noise is: an assertion there would pass or fail for
+    reasons unrelated to the stream. Compare the noise itself.
+    """
+    from qdif.uno.decode import _cycle_key
+    from qdif.uno.noise import build_draft_block
+
+    seeds = mx.array([PROMPT[-1]], dtype=mx.int32)
+
+    def block(stream_seed, cycle):
+        return build_draft_block(
+            seeds, 8, "random_uniform", 480, 512, key=_cycle_key(stream_seed, cycle)
+        ).tolist()
+
+    for cycle in range(1, 6):
+        assert block(1, cycle) != block(2, cycle)
+
+
+def test_bench_noise_is_indexed_by_cycle_not_by_call_order():
+    """Cycle c must see the same noise however many cycles a run took to get there.
+
+    Two checkpoints accept different numbers of tokens and therefore run different
+    numbers of cycles. If the noise were chained rather than indexed, they would be
+    measured against different noise from their first divergence onward and part of
+    any acceptance difference would be the draw.
+    """
+    from qdif.uno.decode import _cycle_key
+    from qdif.uno.noise import make_noise
+
+    def block(cycle):
+        return make_noise((1, 3), "random_uniform", 480, 512,
+                          key=_cycle_key(555, cycle)).tolist()
+
+    assert block(7) == block(7)
+    assert block(7) != block(8)
+    # ...and reaching cycle 7 via other cycles first changes nothing
+    for c in range(7):
+        block(c)
+    assert block(7) == block(7)
+
+
+def test_uno_stays_lossless_with_an_explicit_noise_stream():
+    """Gate 3 must not depend on where the draft noise came from."""
+    model = _model(trained=True)
+    reference, _ = ar_greedy_generate(model, PROMPT, max_tokens=24)
+    assert_varied(reference)
+    for seed in (0, 7, 20260904):
+        tokens, _ = uno_greedy_generate(
+            model, PROMPT, max_tokens=24, block_size=4,
+            transaction_mode="snapshot", noise_stream_seed=seed,
+        )
+        assert tokens == reference
+
+
+# ------------------------------------------- Act IV-U4: cost model v2 accounting
+
+
+@pytest.mark.parametrize("block_size", [2, 4, 8])
+def test_cycle_time_is_fully_attributed(block_size):
+    """proposal + verify + commit + overhead must account for the cycle loop.
+
+    U3's cost model over-predicted throughput at every checkpoint by a consistent
+    +3.9-10.2%, which is what a missing additive term looks like. This asserts the
+    stages now tile the cycle, so the v2 model has nowhere left to hide a bias.
+    """
+    model = _model(trained=True)
+    _, stats = uno_greedy_generate(
+        model, PROMPT, max_tokens=32, block_size=block_size,
+        transaction_mode="snapshot", noise_stream_seed=3,
+    )
+    accounted = (
+        stats.proposal_seconds + stats.verify_seconds
+        + stats.commit_seconds + stats.overhead_seconds
+    )
+    assert stats.cycle_seconds > 0
+    assert stats.overhead_seconds > 0, "overhead must be measured, not assumed zero"
+    assert accounted <= stats.cycle_seconds + 1e-6
+    assert stats.unattributed_seconds < 0.05 * stats.cycle_seconds, (
+        f"{stats.unattributed_seconds:.4f}s of {stats.cycle_seconds:.4f}s unattributed"
+    )
+    # the cycle loop is the bulk of the run, the rest being prefill
+    assert stats.cycle_seconds <= stats.wall_seconds + 1e-6
+
+
+def test_stats_dict_exposes_the_v2_cost_terms():
+    model = _model(trained=True)
+    _, stats = uno_greedy_generate(
+        model, PROMPT, max_tokens=16, block_size=4,
+        transaction_mode="snapshot", noise_stream_seed=4,
+    )
+    payload = stats.to_dict()
+    for key in ("overhead_ms_per_cycle", "unattributed_ms_per_cycle",
+                "overhead_seconds", "cycle_seconds"):
+        assert key in payload
+    assert payload["overhead_ms_per_cycle"] > 0

@@ -24,6 +24,7 @@ import mlx.optimizers as optim
 
 from .losses import combine, cross_entropy, reverse_kl, total_variation
 from .metrics import slot_metrics
+from .rng import EVAL_NOISE, TRAIN_NOISE, stream_key, stream_report
 from .teacher import build_uno_batch
 
 
@@ -118,7 +119,13 @@ def evaluate(
     block_size = block_size or config.block_size
     num_batches = num_batches or config.eval_batches
     # A private key stream. Evaluation must not consume the global RNG that training
-    # draws from -- see `make_noise`'s docstring and gate U3-0b.
+    # draws from -- see `rng.py` and gate U3-0b.
+    #
+    # Deliberately still the U3 formula rather than `stream_key(seed, EVAL_NOISE)`:
+    # the in-training eval curve is plotted continuously across the U3 run and its U4
+    # continuation, and changing the eval noise at step 3200 would put a step in that
+    # curve that looks like an effect of training. The stream is already isolated,
+    # which is the property that matters; `EVAL_NOISE` names it in the run record.
     eval_key = mx.random.key(config.seed + 999_983)
     totals: dict[str, list] = {}
     rows = 0
@@ -172,10 +179,26 @@ def train_uno(
     config: UnoTrainConfig,
     output_dir: Path | str | None = None,
     echo=print,
+    resume_from: Path | str | None = None,
 ) -> dict:
     """Run a full training job. Returns the history and the integrity record.
 
     `train_windows` / `val_windows` are infinite iterators of `[B, W]` int arrays.
+
+    `resume_from` continues an earlier run from a checkpoint directory. The result is a
+    genuine continuation and not a restart, because all four pieces of state are
+    restored rather than reinitialised:
+
+      * adapter weights and AdamW's first/second moments (`load_checkpoint`);
+      * the step counter, so the learning-rate schedule and the checkpoint schedule
+        both pick up where they left off;
+      * the training noise, which is keyed on `(seed, TRAIN_NOISE, step)` and therefore
+        reproduces exactly what an uninterrupted run would have drawn at that step;
+      * the data position, which the caller fast-forwards before passing the iterator
+        in (`WindowSource.fast_forward`).
+
+    Anything less is a restart wearing a continuation's clothes, and Act IV-U already
+    paid for that once.
     """
     mx.random.seed(config.seed)
     if model.lora_report is None:
@@ -204,6 +227,28 @@ def train_uno(
     optimizer = optim.AdamW(
         learning_rate=config.learning_rate, weight_decay=config.weight_decay
     )
+
+    start_step = 0
+    resumed: dict | None = None
+    if resume_from is not None:
+        resumed = load_checkpoint(model, optimizer, resume_from)
+        start_step = int(resumed["step"])
+        echo(
+            f"[uno] resumed from {resume_from} at step {start_step} "
+            f"({resumed.get('optimizer_tensors', 0)} optimizer tensors restored)"
+        )
+        saved_hash = resumed.get("config_hash")
+        if saved_hash and saved_hash != config_hash(config):
+            echo(
+                f"[uno] WARNING: config hash changed since the checkpoint "
+                f"({saved_hash[:12]}… -> {config_hash(config)[:12]}…). "
+                f"This is a continuation only in the sense that the weights carry over."
+            )
+        if start_step >= config.steps:
+            raise ValueError(
+                f"checkpoint is at step {start_step} but config.steps is {config.steps}; "
+                f"nothing to do"
+            )
 
     saturation_streak = 0
 
@@ -239,7 +284,7 @@ def train_uno(
     evals: list[dict] = []
     start = time.perf_counter()
 
-    for step in range(config.steps):
+    for step in range(start_step, config.steps):
         block_size = config.block_size_at(step)
         windows = next(train_windows)
         batch = build_uno_batch(
@@ -250,6 +295,9 @@ def train_uno(
             noise_mode=config.noise_mode,
             corruption=config.corruption,
             shuffle_targets=config.shuffle_targets,
+            # Keyed on the step index, not on how many draws came before: this is what
+            # makes a resumed run see the noise the uninterrupted run would have seen.
+            key=stream_key(config.seed, TRAIN_NOISE, step),
         )
         teacher_logits = mx.stop_gradient(
             model.ar_logits(batch.teacher_ids)[:, batch.supervised_slice, :]
@@ -323,7 +371,18 @@ def train_uno(
             if target is not None:
                 save_checkpoint(
                     model, optimizer, step + 1, target,
-                    extra={"train_tv": record["tv"], "lr": record["lr"]},
+                    extra={
+                        "train_tv": record["tv"],
+                        "lr": record["lr"],
+                        "block_size": block_size,
+                        "config_hash": config_hash(config),
+                        "seed": config.seed,
+                        "rng": stream_report(config.seed),
+                        "data_position": {
+                            "train": _source_state(train_windows),
+                            "val": _source_state(val_windows),
+                        },
+                    },
                 )
                 echo(f"[uno] checkpoint -> {target}")
 
@@ -347,10 +406,25 @@ def train_uno(
             "EXPERIMENT INVALID: the frozen backbone changed during training. "
             f"{len(changed)} tensors moved, first: {changed[:5]}"
         )
-    echo(f"[uno] backbone unchanged after {config.steps} steps ({wall:.1f}s)")
+    echo(
+        f"[uno] backbone unchanged after {config.steps - start_step} steps "
+        f"({start_step} -> {config.steps}, {wall:.1f}s)"
+    )
 
     result = {
         "config": config.to_dict(),
+        "config_hash": config_hash(config),
+        "rng": stream_report(config.seed),
+        "resume": {
+            "resumed_from": str(resume_from) if resume_from else None,
+            "start_step": start_step,
+            "end_step": config.steps,
+            "checkpoint_state": resumed,
+        },
+        "data_position": {
+            "train": _source_state(train_windows),
+            "val": _source_state(val_windows),
+        },
         "params": params,
         "lora": model.lora_report.to_dict(),
         "integrity": {
@@ -374,6 +448,32 @@ def train_uno(
     return result
 
 
+def config_hash(config: UnoTrainConfig) -> str:
+    """A stable digest of everything that defines the training arm.
+
+    `steps`, `checkpoint_steps`, `eval_every`, `eval_batches` and `log_every` are
+    excluded on purpose: extending a run or changing how often it is measured must not
+    read as "a different experiment". Everything that changes what is optimised is in.
+    """
+    import hashlib
+
+    ignore = {"steps", "checkpoint_steps", "eval_every", "eval_batches", "log_every"}
+    payload = {k: v for k, v in sorted(config.to_dict().items()) if k not in ignore}
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, default=str).encode()
+    ).hexdigest()
+
+
+def _source_state(source) -> dict | None:
+    """`WindowSource.state_dict()` if the iterator has one, else `None`.
+
+    The overfit harness passes a plain generator; a checkpoint from it simply records
+    no data position rather than failing.
+    """
+    getter = getattr(source, "state_dict", None)
+    return getter() if callable(getter) else None
+
+
 def save_checkpoint(model, optimizer, step: int, directory: Path | str,
                     extra: dict | None = None) -> Path:
     """Write everything needed to resume *exactly*: adapter, optimizer, RNG, position.
@@ -383,6 +483,21 @@ def save_checkpoint(model, optimizer, step: int, directory: Path | str,
     and the data-iterator position are both lost, so a "continuation" would silently
     be a fresh optimizer on a different data order. Saving the optimizer state makes
     the difference between a resumable run and a restart-in-disguise.
+
+    Act IV-U4 §2 requires seven things in a checkpoint. Where each lives:
+
+    | adapter weights | `adapter.safetensors`                                        |
+    | optimizer state | `optimizer.safetensors`                                      |
+    | scheduler state | `step` + `lr`; the schedule is a pure function of the step    |
+    | training step   | `step`                                                       |
+    | PRNG state      | `rng` — stream *bases*; the draw is keyed on `(seed, step)`,  |
+    |                 | so there is no evolving state to lose                        |
+    | data position   | `data_position`                                              |
+    | config hash     | `config_hash`                                                |
+
+    The PRNG row is the one worth reading twice. Nothing here saves a mutable RNG
+    state, because after `rng.py` there is none to save: the noise at step `s` is a
+    function of `(seed, stream, s)` alone.
     """
     from mlx.utils import tree_flatten
 

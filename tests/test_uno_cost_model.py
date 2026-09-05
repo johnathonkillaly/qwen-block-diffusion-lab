@@ -154,3 +154,132 @@ def test_distribution_from_counts_normalises():
     assert distribution == {0: 0.75, 1: 0.25}
     with pytest.raises(ValueError, match="empty"):
         distribution_from_counts({})
+
+
+# ------------------------------------------------- Act IV-U4: v2 and horizon
+
+
+def test_overhead_defaults_to_zero_so_v1_results_still_evaluate():
+    """U3's stage timings must reproduce U3's predictions, bias included."""
+    v1 = CycleCost(proposal_ms=10.0, verify_ms=9.0, commit_ms=1.0)
+    assert v1.total_ms == pytest.approx(20.0)
+    assert v1.to_dict()["overhead_ms"] == 0.0
+
+
+def test_overhead_lowers_predicted_throughput():
+    """The v2 term must push predictions *down*, which is the direction U3's residual
+    says they need to move: v1 over-predicted at every checkpoint."""
+    distribution = geometric_distribution(4, 0.4)
+    v1 = CycleCost(10.0, 9.0, 1.0)
+    v2 = CycleCost(10.0, 9.0, 1.0, overhead_ms=1.6)
+    fast = predicted_tokens_per_second(4, distribution, v1)
+    slow = predicted_tokens_per_second(4, distribution, v2)
+    assert slow < fast
+    assert slow == pytest.approx(fast * 20.0 / 21.6)
+
+
+def test_survival_curve_area_is_the_expectation():
+    """E[X] = sum_j P(X >= j) is the identity the whole analysis rests on."""
+    from qdif.uno.cost_model import survival_curve
+
+    for block_size in (2, 4, 8):
+        for rate in (0.0, 0.25, 0.6, 1.0):
+            distribution = geometric_distribution(block_size, rate)
+            curve = survival_curve(block_size, distribution)
+            assert curve["area_check"] == pytest.approx(0.0, abs=1e-9)
+            assert curve["mean_committed_tokens"] == pytest.approx(
+                expected_committed(block_size, distribution), abs=1e-5
+            )
+
+
+def test_survival_curve_is_non_increasing():
+    from qdif.uno.cost_model import survival_curve
+
+    curve = survival_curve(8, geometric_distribution(8, 0.55))
+    values = [curve["accepted_specs"][str(j)] for j in range(1, 8)]
+    assert values == sorted(values, reverse=True)
+    assert all(0.0 <= v <= 1.0 for v in values)
+
+
+def test_survival_curve_names_both_quantities_distinctly():
+    """U4 sec.19: 'accepted specs' and 'committed tokens' are different numbers."""
+    from qdif.uno.cost_model import survival_curve
+
+    curve = survival_curve(4, geometric_distribution(4, 0.5))
+    assert curve["mean_committed_tokens"] == pytest.approx(
+        curve["mean_accepted_specs"] + 2.0
+    )
+    assert set(curve["accepted_specs"]) == {"1", "2", "3"}
+    assert set(curve["committed_tokens"]) == {"1", "2", "3", "4", "5"}
+
+
+def test_slot_cost_regression_recovers_a_known_line():
+    from qdif.uno.cost_model import slot_cost_regression
+
+    fit = slot_cost_regression([(2, 14.0), (4, 18.0), (8, 26.0)])
+    assert fit["ms_per_slot"] == pytest.approx(2.0)
+    assert fit["intercept_ms"] == pytest.approx(10.0)
+    assert fit["r_squared"] == pytest.approx(1.0)
+
+
+def test_slot_cost_regression_needs_two_block_sizes():
+    from qdif.uno.cost_model import slot_cost_regression
+
+    with pytest.raises(ValueError, match="at least two"):
+        slot_cost_regression([(4, 18.0)])
+    with pytest.raises(ValueError, match="one block size"):
+        slot_cost_regression([(4, 18.0), (4, 19.0)])
+
+
+def test_marginal_slot_value_stops_paying_when_acceptance_decays():
+    """Early slots pay for themselves; late ones stop. That crossing is the frontier."""
+    from qdif.uno.cost_model import marginal_slot_value
+
+    rows = marginal_slot_value(
+        8, geometric_distribution(8, 0.35), CycleCost(12.0, 13.0, 1.0, 2.0),
+        ms_per_extra_slot=1.5,
+    )
+    assert [r["slot"] for r in rows] == list(range(1, 8))
+    gains = [r["marginal_tokens"] for r in rows]
+    assert gains == sorted(gains, reverse=True)
+    assert rows[0]["pays_for_itself"]
+    assert not rows[-1]["pays_for_itself"]
+
+
+def test_marginal_slot_value_with_perfect_acceptance_always_pays():
+    from qdif.uno.cost_model import marginal_slot_value
+
+    rows = marginal_slot_value(
+        8, geometric_distribution(8, 1.0), CycleCost(12.0, 13.0, 1.0, 2.0),
+        ms_per_extra_slot=0.5,
+    )
+    assert all(r["pays_for_itself"] for r in rows)
+
+
+def test_end_to_end_prediction_is_below_steady_state():
+    """Prefill can only slow the reported rate, never speed it up."""
+    from qdif.uno.cost_model import predicted_end_to_end_tokens_per_second
+
+    distribution = geometric_distribution(4, 0.4)
+    cost = CycleCost(10.0, 9.0, 1.0, 1.5)
+    steady = predicted_tokens_per_second(4, distribution, cost)
+    end_to_end = predicted_end_to_end_tokens_per_second(
+        4, distribution, cost, prefill_ms=25.0, tokens=48
+    )
+    assert end_to_end < steady
+    # ...and with no prefill the two must coincide exactly
+    assert predicted_end_to_end_tokens_per_second(
+        4, distribution, cost, prefill_ms=0.0, tokens=48
+    ) == pytest.approx(steady)
+
+
+def test_end_to_end_prediction_approaches_steady_state_for_long_runs():
+    from qdif.uno.cost_model import predicted_end_to_end_tokens_per_second
+
+    distribution = geometric_distribution(4, 0.4)
+    cost = CycleCost(10.0, 9.0, 1.0, 1.5)
+    steady = predicted_tokens_per_second(4, distribution, cost)
+    short = predicted_end_to_end_tokens_per_second(4, distribution, cost, 25.0, 32)
+    long = predicted_end_to_end_tokens_per_second(4, distribution, cost, 25.0, 4096)
+    assert short < long < steady
+    assert long == pytest.approx(steady, rel=0.01)

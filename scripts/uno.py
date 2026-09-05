@@ -413,7 +413,7 @@ def cmd_overfit(args) -> int:
 
 
 def cmd_train(args) -> int:
-    """Milestone C/D: held-out training."""
+    """Milestone C/D: held-out training, with exact resume."""
     from qdif.uno.data import build_sources
     from qdif.uno.trainer import UnoTrainConfig, train_uno
 
@@ -446,8 +446,42 @@ def cmd_train(args) -> int:
         f"[data] train {train_source.num_windows} windows / {train_source.num_tokens:,} tokens | "
         f"val {val_source.num_windows} windows / {val_source.num_tokens:,} tokens"
     )
-    result = train_uno(model, train_source, val_source, config, output_dir=args.out, echo=print)
+
+    resume_note = None
+    if args.resume_from:
+        state = json.loads((Path(args.resume_from) / "checkpoint_state.json").read_text())
+        position = state.get("data_position") or {}
+        if position.get("train"):
+            train_source.load_state_dict(position["train"])
+            if position.get("val"):
+                val_source.load_state_dict(position["val"])
+            resume_note = "restored from the checkpoint's recorded data position"
+        else:
+            # Act IV-U3's checkpoints predate `data_position`. The position is still
+            # recoverable exactly rather than approximately, because a WindowSource is
+            # a pure function of (seed, number of draws): training drew once per step,
+            # and evaluation drew `eval_batches` times per eval. Replaying those counts
+            # lands on the same windows in the same order.
+            step = int(state["step"])
+            evals = step // max(args.resume_eval_every, 1)
+            train_source.fast_forward(step)
+            val_source.fast_forward(evals * args.resume_eval_batches)
+            resume_note = (
+                f"reconstructed: {step} train draws, {evals} x "
+                f"{args.resume_eval_batches} val draws (checkpoint predates "
+                f"data_position)"
+            )
+        print(f"[data] resume position — {resume_note}; "
+              f"train cursor {train_source.state_dict()['draws']} draws, "
+              f"val cursor {val_source.state_dict()['draws']} draws")
+
+    result = train_uno(
+        model, train_source, val_source, config,
+        output_dir=args.out, echo=print, resume_from=args.resume_from or None,
+    )
     result["provenance"] = provenance({"stage": "train", "run": args.out})
+    if resume_note:
+        result["resume"]["data_position_note"] = resume_note
     result["data"] = {
         "train_windows": train_source.num_windows,
         "train_tokens": train_source.num_tokens,
@@ -1158,6 +1192,439 @@ def _draftability_quintiles(model, windows, block_size, reset_adapter, pristine)
     }
 
 
+# ------------------------------------------------------------------- u4 eval
+
+
+#: Future-offset convention, stated once so it cannot drift.
+#:
+#: A block of size K has K supervised positions. Position `block_start + j` predicts the
+#: token `j + 1` steps after the last committed token, so:
+#:
+#:     future offset +j   ==   supervised slot j-1        (j = 1 … K)
+#:
+#: Offset +1 is the *seed* row. It runs with the adapter off, so its agreement with the
+#: frozen model is 1.0 by construction; it is reported because a value below 1.0 would
+#: mean the token gate is leaking onto clean rows, which would invalidate every
+#: acceptance number. Offsets +2 … +K are the speculative ones, and are the only places
+#: training can show up.
+#:
+#: Act IV-U3's tables labelled these by *speculative slot index*, so its "+1" and "+2"
+#: are this convention's "+2" and "+3". The U3 finding is unchanged — later horizons
+#: improved more — but the labels shift by one, and U4 uses the convention above.
+OFFSET_NOTE = (
+    "future offset +j == supervised slot j-1; +1 is the adapter-off seed row "
+    "(agreement 1.0 by construction). U3 labelled by speculative slot, so U3's "
+    "'+1' is U4's '+2'."
+)
+
+
+def cmd_u4_eval(args) -> int:
+    """Act IV-U4 evaluation: every checkpoint, one session, one harness.
+
+    Differences from `u3-eval`, all of them in service of resolving smaller effects:
+
+    * **Every stochastic input is keyed.** The held-out corruption, the draftability
+      probe and the decode-time draft noise all come from explicit streams indexed by
+      batch or cycle. Two checkpoints therefore see *identical* noise. U3 drew from the
+      global RNG, so part of any difference between two checkpoints was the draw —
+      tolerable when looking for +50% acceptance, not when the pre-registered
+      saturation threshold is 0.02 absolute.
+    * **Cycle overhead is measured**, so the cost model has a term for the work that is
+      neither a forward nor a commit (v1 over-predicted throughput at every checkpoint).
+    * **Full-range survival curves**, per-offset draftability correlations, and the
+      marginal value of each draft slot.
+    """
+    import mlx.core as mx
+
+    from qdif.uno.cost_model import (
+        CycleCost, ceiling, distribution_from_counts, marginal_slot_value,
+        predicted_end_to_end_tokens_per_second, predicted_tokens_per_second,
+        predicted_tpf, slot_cost_regression, speedup_table, survival_curve,
+    )
+    from qdif.uno.data import build_sources, prompt_suite_tokens
+    from qdif.uno.decode import ar_greedy_generate, uno_greedy_generate
+    from qdif.uno.gated_lora import gated_lora_modules
+    from qdif.uno.losses import total_variation
+    from qdif.uno.metrics import pearson, slot_metrics
+    from qdif.uno.rng import EVAL_NOISE, stream_key, stream_report
+    from qdif.uno.teacher import build_uno_batch
+    from qdif.uno.trainer import load_adapter
+
+    model, _ = load_model(rank=args.rank, full_attention=True, mlp=True)
+    fingerprint = model.fingerprint(full=True)
+    pristine = {id(m): (m.lora_a, m.lora_b) for m in gated_lora_modules(model.base)}
+    block_sizes = [int(b) for b in args.block_sizes.split(",")]
+
+    prompts = prompt_suite_tokens(model.tokenizer)
+    _, val_source = build_sources(
+        model.tokenizer, width=args.window, batch_size=args.batch_size,
+        train_windows=8, val_windows=args.val_windows, seed=args.seed,
+        eos_id=model.tokenizer.eos_token_id,
+    )
+    windows = [next(val_source) for _ in range(args.eval_batches)]
+    # One key per batch index, shared by every checkpoint and every block size.
+    eval_noise_seed = args.eval_noise_seed if args.eval_noise_seed is not None else args.seed
+    batch_keys = [stream_key(eval_noise_seed, EVAL_NOISE, i) for i in range(len(windows))]
+    print(f"[u4] {len(windows) * args.batch_size} held-out rows, "
+          f"{len(prompts)} decode prompts, {args.repeats} repeats, "
+          f"noise stream seed {args.noise_stream_seed}, "
+          f"eval noise seed {eval_noise_seed}")
+    print(f"[u4] {OFFSET_NOTE}")
+
+    def reset_adapter():
+        for module in gated_lora_modules(model.base):
+            a, b = pristine[id(module)]
+            module.lora_a, module.lora_b = a, mx.zeros_like(b)
+        mx.eval(model.base.parameters())
+
+    # ---- AR baseline, measured in this session ------------------------------
+    print("\n== AR baseline (this session) ==")
+    reset_adapter()
+    ar_rows, ar_reference = [], {}
+    for domain, text, ids in prompts:
+        for _ in range(args.warmup):
+            ar_greedy_generate(model, ids, max_tokens=8)
+        speeds = []
+        for _ in range(args.repeats):
+            tokens, st = ar_greedy_generate(model, ids, max_tokens=args.tokens)
+            speeds.append(st.tokens_per_second)
+        ar_reference[text] = tokens
+        mu = sum(speeds) / len(speeds)
+        ar_rows.append({
+            "domain": domain, "prompt": text,
+            "tokens_per_second": max(speeds),
+            "repeat_std": (sum((v - mu) ** 2 for v in speeds) / max(len(speeds) - 1, 1)) ** 0.5,
+            "forwards": st.forwards,
+        })
+    ar_median, ar_std, ar_mean = _median_std([r["tokens_per_second"] for r in ar_rows])
+    ar_repeat_noise = sum(r["repeat_std"] for r in ar_rows) / len(ar_rows)
+    print(f"  AR {ar_median:.2f} tok/s (mean {ar_mean:.2f}, sd across prompts {ar_std:.2f}, "
+          f"repeat noise {ar_repeat_noise:.2f})")
+    if args.historical_ar:
+        print(f"  historical U3 AR baseline {args.historical_ar:.2f} tok/s "
+              f"({100 * (ar_median - args.historical_ar) / args.historical_ar:+.1f}%) "
+              f"— speedups below use the current session")
+
+    checkpoints = [c.split("=", 1) for c in args.checkpoint]
+    results = []
+
+    for name, path in checkpoints:
+        print(f"\n== checkpoint {name} ==")
+        reset_adapter()
+        # An empty path is Control 1: the zero-init adapter, which `reset_adapter`
+        # already restored. It is the floor every trained number must clear, and at
+        # K=8 it is also the "no long-horizon training at all" reference.
+        n_loaded = 0 if not path else load_adapter(
+            model, str(Path(path) / "adapter.safetensors")
+            if Path(path).is_dir() else path)
+        entry = {"checkpoint": name, "path": path, "adapter_tensors": n_loaded,
+                 "per_block": {}}
+        cost_samples = []
+
+        for block_size in block_sizes:
+            # ---- held-out teacher-forced -----------------------------------
+            tf, tv_total, rows_n = [], 0.0, 0
+            for index, chunk in enumerate(windows):
+                batch = build_uno_batch(
+                    chunk, block_size=block_size, mask_token_id=model.mask_token_id,
+                    vocab_size=model.vocab_size, corruption="full",
+                    key=batch_keys[index],
+                )
+                teacher = mx.stop_gradient(
+                    model.ar_logits(batch.teacher_ids)[:, batch.supervised_slice, :])
+                student = mx.stop_gradient(
+                    model.draft_logits(batch.student_ids, batch.lora_mask)[
+                        :, batch.supervised_slice, :])
+                tf.append(slot_metrics(student, teacher, batch.targets))
+                tv_total += float(total_variation(student, teacher).item()) * batch.batch_size
+                rows_n += batch.batch_size
+
+            def merge(key):
+                vals = [m[key] for m in tf]
+                if isinstance(vals[0], list):
+                    return [round(sum(c) / len(c), 5) for c in zip(*vals)]
+                return round(sum(vals) / len(vals), 5)
+
+            per_slot = merge("agree_per_slot")
+            teacher_forced = {
+                "agree_specs": merge("agree_specs"),
+                "agree_per_slot": per_slot,
+                # offset +j == slot j-1; +1 is the adapter-off seed row
+                "agree_per_offset": {
+                    f"+{j + 1}": per_slot[j] for j in range(len(per_slot))
+                },
+                "seed_row_agreement": per_slot[0],
+                "mean_accepted_prefix": merge("mean_accepted_prefix"),
+                "full_block_rate": merge("full_block_rate"),
+                "validation_tv": round(tv_total / rows_n, 5),
+                "rows": rows_n,
+            }
+            if abs(per_slot[0] - 1.0) > 1e-6:
+                print(f"  !! seed-row agreement {per_slot[0]:.6f} != 1.0 — the token "
+                      f"gate is leaking onto clean rows; acceptance numbers are suspect")
+
+            # ---- free-running decode ---------------------------------------
+            speeds, tpfs, hist = [], [], {}
+            prop, ver, com, ovh, unattr, prefills = [], [], [], [], [], []
+            steady_speeds = []
+            repeat_spread = []
+            forwards = tokens_total = replays = 0
+            agreement = []
+            for prompt_index, (domain, text, ids) in enumerate(prompts):
+                for _ in range(args.warmup):
+                    uno_greedy_generate(model, ids, max_tokens=8, block_size=block_size,
+                                        transaction_mode="snapshot",
+                                        noise_stream_seed=args.noise_stream_seed + prompt_index)
+                best = None
+                per_prompt = []
+                for _ in range(args.repeats):
+                    toks, st = uno_greedy_generate(
+                        model, ids, max_tokens=args.tokens, block_size=block_size,
+                        transaction_mode="snapshot",
+                        noise_stream_seed=args.noise_stream_seed + prompt_index)
+                    per_prompt.append(st.tokens_per_second)
+                    if best is None or st.tokens_per_second > best.tokens_per_second:
+                        best, best_tokens = st, toks
+                if len(per_prompt) > 1:
+                    mu = sum(per_prompt) / len(per_prompt)
+                    repeat_spread.append(
+                        (sum((v - mu) ** 2 for v in per_prompt) / (len(per_prompt) - 1)) ** 0.5)
+                speeds.append(best.tokens_per_second)
+                tpfs.append(best.tokens_per_forward)
+                forwards += best.forwards
+                tokens_total += best.tokens
+                replays += best.replay_forwards
+                for a in best.accepted_per_cycle:
+                    hist[a] = hist.get(a, 0) + 1
+                d = best.to_dict()
+                prop.append(d["proposal_ms_per_cycle"])
+                ver.append(d["verify_ms_per_cycle"])
+                com.append(d["commit_ms_per_cycle"])
+                ovh.append(d["overhead_ms_per_cycle"])
+                unattr.append(d["unattributed_ms_per_cycle"])
+                prefills.append(1000.0 * best.prefill_seconds)
+                steady_speeds.append(
+                    best.tokens / max(best.wall_seconds - best.prefill_seconds, 1e-9))
+                ref = ar_reference[text]
+                agreement.append(sum(x == y for x, y in zip(best_tokens, ref)) / max(len(ref), 1))
+
+            def avg(values):
+                return sum(values) / len(values)
+
+            med, sd, mean = _median_std(speeds)
+            cost_v2 = CycleCost(avg(prop), avg(ver), avg(com), avg(ovh))
+            cost_v1 = CycleCost(avg(prop), avg(ver), avg(com))
+            distribution = distribution_from_counts(hist)
+            offered = block_size - 1
+            cycles = sum(hist.values())
+            cost_samples.append((block_size, cost_v2.total_ms))
+
+            steady_median, _, _ = _median_std(steady_speeds)
+            predicted_steady = predicted_tokens_per_second(block_size, distribution, cost_v2)
+            predicted_v2 = predicted_end_to_end_tokens_per_second(
+                block_size, distribution, cost_v2, avg(prefills), args.tokens)
+            predicted_v1 = predicted_tokens_per_second(block_size, distribution, cost_v1)
+            free_running = {
+                "tokens_per_forward": round(tokens_total / forwards, 5),
+                "forwards_per_token": round(forwards / tokens_total, 5),
+                "replay_forwards": replays,
+                "cycles": cycles,
+                "median_tokens_per_second": round(med, 3),
+                "mean_tokens_per_second": round(mean, 3),
+                "std_tokens_per_second": round(sd, 3),
+                "repeat_noise_tok_s": round(avg(repeat_spread), 4) if repeat_spread else 0.0,
+                "speedup_vs_ar": round(med / ar_median, 4),
+                "acceptance_histogram": {str(k): v for k, v in sorted(hist.items())},
+                "mean_accepted_specs": round(
+                    sum(k * v for k, v in hist.items()) / cycles, 4),
+                "acceptance_rate": round(
+                    sum(k * v for k, v in hist.items()) / (cycles * offered), 4)
+                    if offered else 0.0,
+                "full_block_rate": round(hist.get(offered, 0) / cycles, 4),
+                "survival": survival_curve(block_size, distribution),
+                "cycle_cost_ms": cost_v2.to_dict(),
+                "unattributed_ms_per_cycle": round(avg(unattr), 4),
+                "prefill_ms": round(avg(prefills), 4),
+                # tokens / (wall - prefill): what the cycle model actually predicts
+                "median_steady_state_tokens_per_second": round(steady_median, 3),
+                "predicted_steady_state_tokens_per_second": round(predicted_steady, 3),
+                "predicted_tokens_per_second": round(predicted_v2, 3),
+                "predicted_tokens_per_second_v1": round(predicted_v1, 3),
+                "predicted_tpf": round(predicted_tpf(block_size, distribution), 5),
+                "ar_agreement": round(avg(agreement), 4),
+                "ceiling": ceiling(block_size, cost_v2, ar_median),
+                "speedup_requirements": speedup_table(
+                    block_size, cost_v2, ar_median,
+                    targets=(1.10, 1.20, 1.30, 1.50, 1.75, 2.00)),
+            }
+            free_running["cost_model_error_pct"] = round(
+                100 * (predicted_v2 - med) / med, 3)
+            free_running["cost_model_v1_error_pct"] = round(
+                100 * (predicted_v1 - med) / med, 3)
+            free_running["cost_model_steady_state_error_pct"] = round(
+                100 * (predicted_steady - steady_median) / steady_median, 3)
+            free_running["residual_tok_s"] = round(predicted_v2 - med, 3)
+
+            entry["per_block"][f"K{block_size}"] = {
+                "teacher_forced": teacher_forced, "free_running": free_running}
+            print(f"  K={block_size}  tf-agree {teacher_forced['agree_specs']:.4f} "
+                  f"val-tv {teacher_forced['validation_tv']:.4f} | "
+                  f"accept {free_running['acceptance_rate']:.4f} "
+                  f"prefix {free_running['mean_accepted_specs']:.3f} "
+                  f"TPF {free_running['tokens_per_forward']:.4f} | "
+                  f"{med:.2f}+-{sd:.2f} tok/s ({free_running['speedup_vs_ar']:.3f}x AR) | "
+                  f"cost v2 {free_running['cost_model_error_pct']:+.1f}% "
+                  f"(v1 {free_running['cost_model_v1_error_pct']:+.1f}%, "
+                  f"steady {free_running['cost_model_steady_state_error_pct']:+.1f}%)")
+
+        # ---- marginal value of each draft slot, across the measured K -------
+        if len(cost_samples) >= 2:
+            fit = slot_cost_regression(cost_samples)
+            entry["slot_cost_fit"] = fit
+            for block_size in block_sizes:
+                blob = entry["per_block"][f"K{block_size}"]["free_running"]
+                blob["marginal_slot_value"] = marginal_slot_value(
+                    block_size,
+                    distribution_from_counts(
+                        {int(k): v for k, v in blob["acceptance_histogram"].items()}),
+                    CycleCost(**{k: v for k, v in blob["cycle_cost_ms"].items()
+                                 if k != "total_ms"}),
+                    fit["ms_per_slot"],
+                )
+            print(f"  slot cost fit: {fit['ms_per_slot']:.3f} ms per extra draft "
+                  f"position (R^2 {fit['r_squared']})")
+
+        # ---- draftability, overall and per future offset ---------------------
+        entry["draftability"] = _draftability_by_offset(
+            model, windows, batch_keys, args.draftability_block, reset_adapter, pristine)
+        q = entry["draftability"]
+        print("  draftability quintile acceptance: "
+              + " ".join(f"q{b['bucket']}={b['agreement']:.3f}" for b in q["buckets"])
+              + f" | r(gap)={q['pearson_gap']:+.4f} r(H)={q['pearson_entropy']:+.4f}")
+        print("  r(gap) by offset: " + " ".join(
+            f"+{o['offset']}={o['pearson_gap']:+.3f}" for o in q["by_offset"]))
+
+        entry["peak_memory_gb"] = round(mx.get_peak_memory() / 1e9, 3)
+        entry["backbone_digest"] = model.fingerprint(full=True).digest
+        entry["backbone_unchanged"] = entry["backbone_digest"] == fingerprint.digest
+        results.append(entry)
+
+    payload = {
+        "provenance": provenance({"stage": "u4-eval"}),
+        "offset_convention": OFFSET_NOTE,
+        "ar_baseline": {"median_tokens_per_second": round(ar_median, 3),
+                        "mean_tokens_per_second": round(ar_mean, 3),
+                        "std_tokens_per_second": round(ar_std, 3),
+                        "repeat_noise_tok_s": round(ar_repeat_noise, 4),
+                        "historical_u3_tokens_per_second": args.historical_ar,
+                        "rows": ar_rows},
+        "harness": {"tokens": args.tokens, "repeats": args.repeats,
+                    "warmup": args.warmup, "eval_rows": len(windows) * args.batch_size,
+                    "prompts": len(prompts), "window": args.window, "seed": args.seed,
+                    "noise_stream_seed": args.noise_stream_seed,
+                    "eval_noise_seed": eval_noise_seed,
+                    "block_sizes": block_sizes,
+                    "rng": stream_report(args.seed)},
+        "backbone_digest": fingerprint.digest,
+        "checkpoints": results,
+    }
+    write_json(Path(args.out), payload)
+    return 0
+
+
+def _draftability_by_offset(model, windows, batch_keys, block_size, reset_adapter, pristine):
+    """Draftability-gap stratification, overall and split by future offset (§20).
+
+    The hypothesis under test is that the gap becomes *more* predictive as the horizon
+    grows: at +2 the adapter is mostly doing next-token prediction from a clean seed,
+    while at +6 it must bridge several tokens it cannot see, which is exactly what the
+    gap measures. Correlations are therefore reported per offset, not only pooled — a
+    pooled correlation would average a strong late-offset effect against a weak early
+    one and report something that describes neither.
+
+    Both the gap and the entropy are properties of the **frozen** model, computed with
+    the adapter reset to its zero-init no-op, so they do not drift as training proceeds.
+    """
+    import mlx.core as mx
+
+    from qdif.uno.gated_lora import gated_lora_modules
+    from qdif.uno.metrics import pearson
+    from qdif.uno.teacher import build_uno_batch
+
+    trained = {id(m): (m.lora_a, m.lora_b) for m in gated_lora_modules(model.base)}
+    gaps, entropies, hits, offsets = [], [], [], []
+
+    for index, chunk in enumerate(windows):
+        batch = build_uno_batch(
+            chunk, block_size=block_size, mask_token_id=model.mask_token_id,
+            vocab_size=model.vocab_size, corruption="full", key=batch_keys[index])
+
+        reset_adapter()
+        full = mx.stop_gradient(
+            model.ar_logits(batch.teacher_ids)[:, batch.supervised_slice, :]).astype(mx.float32)
+        corrupt = mx.stop_gradient(
+            model.draft_logits(batch.student_ids, batch.lora_mask)[
+                :, batch.supervised_slice, :]).astype(mx.float32)
+        lf = full - mx.logsumexp(full, axis=-1, keepdims=True)
+        lc = corrupt - mx.logsumexp(corrupt, axis=-1, keepdims=True)
+        gap = mx.sum(mx.abs(mx.exp(lf) - mx.exp(lc)), axis=-1)
+        entropy = -mx.sum(mx.exp(lf) * lf, axis=-1)
+
+        for module in gated_lora_modules(model.base):
+            a, b = trained[id(module)]
+            module.lora_a, module.lora_b = a, b
+        mx.eval(model.base.parameters())
+        student = mx.stop_gradient(
+            model.draft_logits(batch.student_ids, batch.lora_mask)[
+                :, batch.supervised_slice, :])
+        hit = (mx.argmax(student, axis=-1) == mx.argmax(full, axis=-1)).astype(mx.float32)
+
+        rows, length = gap.shape
+        for row in range(rows):
+            for slot in range(1, length):  # slot 0 is the unadapted seed
+                gaps.append(float(gap[row, slot]))
+                entropies.append(float(entropy[row, slot]))
+                hits.append(float(hit[row, slot]))
+                offsets.append(slot + 1)  # future offset +j == slot j-1
+
+    order = sorted(range(len(gaps)), key=lambda i: gaps[i])
+    size = max(1, len(order) // 5)
+    buckets = []
+    for index in range(5):
+        lo = index * size
+        hi = len(order) if index == 4 else min(len(order), (index + 1) * size)
+        chunk_idx = order[lo:hi]
+        if not chunk_idx:
+            continue
+        buckets.append({
+            "bucket": index, "n": len(chunk_idx),
+            "mean_gap": round(sum(gaps[i] for i in chunk_idx) / len(chunk_idx), 5),
+            "agreement": round(sum(hits[i] for i in chunk_idx) / len(chunk_idx), 5),
+        })
+
+    by_offset = []
+    for offset in sorted(set(offsets)):
+        keep = [i for i, o in enumerate(offsets) if o == offset]
+        by_offset.append({
+            "offset": offset,
+            "n": len(keep),
+            "mean_gap": round(sum(gaps[i] for i in keep) / len(keep), 5),
+            "mean_entropy": round(sum(entropies[i] for i in keep) / len(keep), 5),
+            "agreement": round(sum(hits[i] for i in keep) / len(keep), 5),
+            "pearson_gap": round(
+                pearson([gaps[i] for i in keep], [hits[i] for i in keep]), 5),
+            "pearson_entropy": round(
+                pearson([entropies[i] for i in keep], [hits[i] for i in keep]), 5),
+        })
+
+    return {
+        "block_size": block_size, "positions": len(hits), "buckets": buckets,
+        "pearson_gap": round(pearson(gaps, hits), 5),
+        "pearson_entropy": round(pearson(entropies, hits), 5),
+        "by_offset": by_offset,
+    }
+
+
 # ------------------------------------------------------------------------ main
 
 
@@ -1208,6 +1675,13 @@ def main() -> int:
     pt.add_argument("--eval-batches", type=int, default=4)
     pt.add_argument("--seed", type=int, default=20260903)
     pt.add_argument("--checkpoint-steps", default="", help="comma-separated steps to checkpoint")
+    pt.add_argument("--resume-from", default="", metavar="DIR",
+                    help="checkpoint directory to continue from (exact resume)")
+    pt.add_argument("--resume-eval-every", type=int, default=100,
+                    help="the ORIGINAL run's eval_every, for reconstructing the data "
+                         "position of a checkpoint written before data_position existed")
+    pt.add_argument("--resume-eval-batches", type=int, default=8,
+                    help="the ORIGINAL run's eval_batches; see --resume-eval-every")
     pt.add_argument("--out", default="runs/uno-train")
     pt.set_defaults(func=cmd_train)
 
@@ -1263,6 +1737,30 @@ def main() -> int:
     p3.add_argument("--seed", type=int, default=20260903)
     p3.add_argument("--out", default="runs/u3a/eval.json")
     p3.set_defaults(func=cmd_u3_eval)
+
+    p4 = sub.add_parser("u4-eval", help="evaluate U4 checkpoints in one session")
+    p4.add_argument("--checkpoint", action="append", default=[], metavar="NAME=PATH")
+    p4.add_argument("--rank", type=int, default=16)
+    p4.add_argument("--block-sizes", default="2,4,8")
+    p4.add_argument("--draftability-block", type=int, default=4)
+    p4.add_argument("--window", type=int, default=128)
+    p4.add_argument("--batch-size", type=int, default=4)
+    p4.add_argument("--eval-batches", type=int, default=32)
+    p4.add_argument("--val-windows", type=int, default=256)
+    p4.add_argument("--tokens", type=int, default=48)
+    p4.add_argument("--repeats", type=int, default=3)
+    p4.add_argument("--warmup", type=int, default=1)
+    p4.add_argument("--seed", type=int, default=20260903)
+    p4.add_argument("--eval-noise-seed", type=int, default=None,
+                    help="seed for the held-out corruption noise; defaults to --seed. "
+                         "Varying it alone (windows held fixed) measures how much of a "
+                         "metric difference is the noise draw rather than the adapter")
+    p4.add_argument("--noise-stream-seed", type=int, default=20260905,
+                    help="fixes the decode-time draft noise; identical across checkpoints")
+    p4.add_argument("--historical-ar", type=float, default=48.35,
+                    help="the U3 session's AR baseline, reported alongside this one")
+    p4.add_argument("--out", default="runs/u4a/eval.json")
+    p4.set_defaults(func=cmd_u4_eval)
 
     args = parser.parse_args()
     return args.func(args)
