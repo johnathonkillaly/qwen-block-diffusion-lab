@@ -1,0 +1,656 @@
+{
+  "FULL": {
+    "stratum": "FULL",
+    "n_fit": 4480,
+    "n_test": 2688,
+    "windows_fit": 640,
+    "windows_test": 384,
+    "acceptance_fit": 0.15201,
+    "acceptance_test": 0.15141,
+    "models": {
+      "1_progress_only": {
+        "auroc": 0.66338,
+        "auprc": 0.27724,
+        "log_loss": 0.39646
+      },
+      "2_uncertainty_only": {
+        "auroc": 0.65474,
+        "auprc": 0.31428,
+        "log_loss": 0.40047
+      },
+      "3_existing_only": {
+        "auroc": 0.63925,
+        "auprc": 0.26878,
+        "log_loss": 0.4093
+      },
+      "4_progress_uncertainty": {
+        "auroc": 0.68753,
+        "auprc": 0.37615,
+        "log_loss": 0.38513
+      },
+      "5_progress_existing": {
+        "auroc": 0.69408,
+        "auprc": 0.33949,
+        "log_loss": 0.38942
+      },
+      "6_progress_existing_uncertainty": {
+        "auroc": 0.71272,
+        "auprc": 0.3848,
+        "log_loss": 0.37942
+      },
+      "8_progress_teacher_entropy": {
+        "auroc": 0.67508,
+        "auprc": 0.2922,
+        "log_loss": 0.39444
+      },
+      "7_shuffled_control": {
+        "auroc": 0.66312,
+        "auroc_p2_5": 0.65905,
+        "auroc_p97_5": 0.6668,
+        "log_loss": 0.39656,
+        "n_permutations": 20
+      }
+    },
+    "quintiles_entropy": [
+      {
+        "quintile": 0,
+        "n": 497,
+        "mean_value": 0.17506,
+        "acceptance": 0.31388,
+        "ci_low": 0.27464,
+        "ci_high": 0.35598
+      },
+      {
+        "quintile": 1,
+        "n": 501,
+        "mean_value": 0.28994,
+        "acceptance": 0.16367,
+        "ci_low": 0.13386,
+        "ci_high": 0.19861
+      },
+      {
+        "quintile": 2,
+        "n": 594,
+        "mean_value": 0.35719,
+        "acceptance": 0.09259,
+        "ci_low": 0.07183,
+        "ci_high": 0.11859
+      },
+      {
+        "quintile": 3,
+        "n": 529,
+        "mean_value": 0.40929,
+        "acceptance": 0.12476,
+        "ci_low": 0.09928,
+        "ci_high": 0.15566
+      },
+      {
+        "quintile": 4,
+        "n": 567,
+        "mean_value": 0.48315,
+        "acceptance": 0.08466,
+        "ci_low": 0.06444,
+        "ci_high": 0.11046
+      }
+    ],
+    "quintiles_gap": [
+      {
+        "quintile": 0,
+        "n": 521,
+        "mean_value": 1.6808,
+        "acceptance": 0.25528,
+        "ci_low": 0.21972,
+        "ci_high": 0.29442
+      },
+      {
+        "quintile": 1,
+        "n": 515,
+        "mean_value": 1.87198,
+        "acceptance": 0.16893,
+        "ci_low": 0.13905,
+        "ci_high": 0.20372
+      },
+      {
+        "quintile": 2,
+        "n": 589,
+        "mean_value": 1.92928,
+        "acceptance": 0.14431,
+        "ci_low": 0.11824,
+        "ci_high": 0.175
+      },
+      {
+        "quintile": 3,
+        "n": 503,
+        "mean_value": 1.96607,
+        "acceptance": 0.11332,
+        "ci_low": 0.0885,
+        "ci_high": 0.144
+      },
+      {
+        "quintile": 4,
+        "n": 560,
+        "mean_value": 1.99151,
+        "acceptance": 0.08036,
+        "ci_low": 0.0606,
+        "ci_high": 0.10584
+      }
+    ],
+    "quintiles_teacher_entropy": [
+      {
+        "quintile": 0,
+        "n": 510,
+        "mean_value": 0.2574,
+        "acceptance": 0.12941,
+        "ci_low": 0.10303,
+        "ci_high": 0.16134
+      },
+      {
+        "quintile": 1,
+        "n": 552,
+        "mean_value": 1.38894,
+        "acceptance": 0.20471,
+        "ci_low": 0.17315,
+        "ci_high": 0.24036
+      },
+      {
+        "quintile": 2,
+        "n": 586,
+        "mean_value": 2.4061,
+        "acceptance": 0.18771,
+        "ci_low": 0.15817,
+        "ci_high": 0.22133
+      },
+      {
+        "quintile": 3,
+        "n": 532,
+        "mean_value": 3.50817,
+        "acceptance": 0.14286,
+        "ci_low": 0.11568,
+        "ci_high": 0.17516
+      },
+      {
+        "quintile": 4,
+        "n": 508,
+        "mean_value": 5.12297,
+        "acceptance": 0.08268,
+        "ci_low": 0.06175,
+        "ci_high": 0.10987
+      }
+    ],
+    "within_offset": [
+      {
+        "offset": "2",
+        "n": 384,
+        "acceptance": 0.375,
+        "auroc_neg_entropy": 0.71224,
+        "auroc_neg_gap": 0.64638,
+        "n_low": 118,
+        "acc_low": 0.57627,
+        "n_high": 128,
+        "acc_high": 0.17188,
+        "adequate": true
+      },
+      {
+        "offset": "3",
+        "n": 384,
+        "acceptance": 0.17708,
+        "auroc_neg_entropy": 0.64012,
+        "auroc_neg_gap": 0.57223,
+        "n_low": 113,
+        "acc_low": 0.30973,
+        "n_high": 129,
+        "acc_high": 0.14729,
+        "adequate": true
+      },
+      {
+        "offset": "4",
+        "n": 384,
+        "acceptance": 0.11979,
+        "auroc_neg_entropy": 0.56908,
+        "auroc_neg_gap": 0.58175,
+        "n_low": 115,
+        "acc_low": 0.16522,
+        "n_high": 144,
+        "acc_high": 0.10417,
+        "adequate": true
+      },
+      {
+        "offset": "5",
+        "n": 384,
+        "acceptance": 0.09896,
+        "auroc_neg_entropy": 0.64192,
+        "auroc_neg_gap": 0.57454,
+        "n_low": 111,
+        "acc_low": 0.16216,
+        "n_high": 141,
+        "acc_high": 0.07092,
+        "adequate": true
+      },
+      {
+        "offset": "6",
+        "n": 384,
+        "acceptance": 0.09375,
+        "auroc_neg_entropy": 0.55855,
+        "auroc_neg_gap": 0.6325,
+        "n_low": 117,
+        "acc_low": 0.11111,
+        "n_high": 126,
+        "acc_high": 0.05556,
+        "adequate": true
+      },
+      {
+        "offset": "7",
+        "n": 384,
+        "acceptance": 0.10938,
+        "auroc_neg_entropy": 0.4851,
+        "auroc_neg_gap": 0.66277,
+        "n_low": 134,
+        "acc_low": 0.08955,
+        "n_high": 126,
+        "acc_high": 0.09524,
+        "adequate": true
+      },
+      {
+        "offset": "8",
+        "n": 384,
+        "acceptance": 0.08594,
+        "auroc_neg_entropy": 0.44583,
+        "auroc_neg_gap": 0.60636,
+        "n_low": 118,
+        "acc_low": 0.05085,
+        "n_high": 120,
+        "acc_high": 0.1,
+        "adequate": true
+      }
+    ],
+    "spearman_test": {
+      "normalized_entropy": -0.19214,
+      "top1_probability": 0.19989,
+      "top1_top2_margin": 0.1852,
+      "existing_draftability_score": -0.17291,
+      "teacher_entropy": -0.06012,
+      "corrupt_entropy": -0.08225
+    },
+    "diagnostic_alternatives": {
+      "top1_probability": {
+        "auroc": 0.68969,
+        "delta_vs_progress": 0.02631
+      },
+      "top1_top2_margin": {
+        "auroc": 0.68693,
+        "delta_vs_progress": 0.02355
+      },
+      "effective_support": {
+        "auroc": 0.68752,
+        "delta_vs_progress": 0.02414
+      }
+    },
+    "comparisons": {
+      "4_vs_1_auroc_delta": 0.02415,
+      "6_vs_5_auroc_delta": 0.01864,
+      "4_vs_1_bootstrap": {
+        "delta_mean": 0.0241,
+        "ci_low": 0.00425,
+        "ci_high": 0.04289,
+        "n_resamples": 2000
+      },
+      "6_vs_5_bootstrap": {
+        "delta_mean": 0.01866,
+        "ci_low": -0.00027,
+        "ci_high": 0.037,
+        "n_resamples": 2000
+      },
+      "6_vs_5_logloss": {
+        "reduction_mean": 0.010043,
+        "ci_low": 0.00296,
+        "ci_high": 0.016866
+      }
+    },
+    "verdict": {
+      "criteria": {
+        "c1_monotone": false,
+        "c2_within_cell": true,
+        "c3_auroc_gain_over_progress": false,
+        "c4_beats_shuffled": true,
+        "c5_adds_to_existing": true,
+        "c6_bootstrap_nontrivial": true
+      },
+      "n_adequate_cells": 7,
+      "n_cells_signed": 5,
+      "quintile_inversions": [
+        -0.15021,
+        -0.07108,
+        0.03217,
+        -0.0401
+      ],
+      "verdict": "FAIL"
+    }
+  },
+  "SCHEDULE": {
+    "stratum": "SCHEDULE",
+    "n_fit": 4480,
+    "n_test": 2688,
+    "windows_fit": 640,
+    "windows_test": 384,
+    "acceptance_fit": 0.49397,
+    "acceptance_test": 0.51228,
+    "models": {
+      "1_progress_only": {
+        "auroc": 0.85413,
+        "auprc": 0.85291,
+        "log_loss": 0.4811
+      },
+      "2_uncertainty_only": {
+        "auroc": 0.75039,
+        "auprc": 0.78284,
+        "log_loss": 0.59203
+      },
+      "3_existing_only": {
+        "auroc": 0.85713,
+        "auprc": 0.86257,
+        "log_loss": 0.45052
+      },
+      "4_progress_uncertainty": {
+        "auroc": 0.8739,
+        "auprc": 0.8849,
+        "log_loss": 0.4477
+      },
+      "5_progress_existing": {
+        "auroc": 0.86915,
+        "auprc": 0.86512,
+        "log_loss": 0.44365
+      },
+      "6_progress_existing_uncertainty": {
+        "auroc": 0.88843,
+        "auprc": 0.90072,
+        "log_loss": 0.41639
+      },
+      "8_progress_teacher_entropy": {
+        "auroc": 0.85966,
+        "auprc": 0.86732,
+        "log_loss": 0.47233
+      },
+      "7_shuffled_control": {
+        "auroc": 0.85392,
+        "auroc_p2_5": 0.85304,
+        "auroc_p97_5": 0.85469,
+        "log_loss": 0.48125,
+        "n_permutations": 20
+      }
+    },
+    "quintiles_entropy": [
+      {
+        "quintile": 0,
+        "n": 557,
+        "mean_value": 0.07544,
+        "acceptance": 0.86535,
+        "ci_low": 0.83449,
+        "ci_high": 0.89121
+      },
+      {
+        "quintile": 1,
+        "n": 592,
+        "mean_value": 0.1985,
+        "acceptance": 0.59291,
+        "ci_low": 0.55285,
+        "ci_high": 0.63176
+      },
+      {
+        "quintile": 2,
+        "n": 501,
+        "mean_value": 0.28474,
+        "acceptance": 0.48703,
+        "ci_low": 0.44352,
+        "ci_high": 0.53073
+      },
+      {
+        "quintile": 3,
+        "n": 518,
+        "mean_value": 0.3612,
+        "acceptance": 0.31853,
+        "ci_low": 0.27987,
+        "ci_high": 0.35987
+      },
+      {
+        "quintile": 4,
+        "n": 520,
+        "mean_value": 0.46383,
+        "acceptance": 0.25962,
+        "ci_low": 0.22379,
+        "ci_high": 0.29896
+      }
+    ],
+    "quintiles_gap": [
+      {
+        "quintile": 0,
+        "n": 0,
+        "mean_value": null,
+        "acceptance": null,
+        "ci_low": NaN,
+        "ci_high": NaN
+      },
+      {
+        "quintile": 1,
+        "n": 1165,
+        "mean_value": 0.21977,
+        "acceptance": 0.87639,
+        "ci_low": 0.85625,
+        "ci_high": 0.89407
+      },
+      {
+        "quintile": 2,
+        "n": 501,
+        "mean_value": 1.62287,
+        "acceptance": 0.32136,
+        "ci_low": 0.28196,
+        "ci_high": 0.36348
+      },
+      {
+        "quintile": 3,
+        "n": 539,
+        "mean_value": 1.89775,
+        "acceptance": 0.20594,
+        "ci_low": 0.17394,
+        "ci_high": 0.2421
+      },
+      {
+        "quintile": 4,
+        "n": 483,
+        "mean_value": 1.97846,
+        "acceptance": 0.17391,
+        "ci_low": 0.14272,
+        "ci_high": 0.21025
+      }
+    ],
+    "quintiles_teacher_entropy": [
+      {
+        "quintile": 0,
+        "n": 510,
+        "mean_value": 0.2574,
+        "acceptance": 0.54314,
+        "ci_low": 0.49974,
+        "ci_high": 0.58589
+      },
+      {
+        "quintile": 1,
+        "n": 552,
+        "mean_value": 1.38894,
+        "acceptance": 0.57971,
+        "ci_low": 0.53812,
+        "ci_high": 0.6202
+      },
+      {
+        "quintile": 2,
+        "n": 586,
+        "mean_value": 2.4061,
+        "acceptance": 0.53413,
+        "ci_low": 0.49365,
+        "ci_high": 0.57417
+      },
+      {
+        "quintile": 3,
+        "n": 532,
+        "mean_value": 3.50817,
+        "acceptance": 0.46429,
+        "ci_low": 0.42231,
+        "ci_high": 0.50677
+      },
+      {
+        "quintile": 4,
+        "n": 508,
+        "mean_value": 5.12297,
+        "acceptance": 0.43307,
+        "ci_low": 0.39064,
+        "ci_high": 0.4765
+      }
+    ],
+    "within_offset": [
+      {
+        "offset": "2",
+        "n": 384,
+        "acceptance": 0.65365,
+        "auroc_neg_entropy": 0.73046,
+        "auroc_neg_gap": 0.83465,
+        "n_low": 132,
+        "acc_low": 0.87879,
+        "n_high": 126,
+        "acc_high": 0.45238,
+        "adequate": true
+      },
+      {
+        "offset": "3",
+        "n": 384,
+        "acceptance": 0.54948,
+        "auroc_neg_entropy": 0.73125,
+        "auroc_neg_gap": 0.83536,
+        "n_low": 122,
+        "acc_low": 0.83607,
+        "n_high": 115,
+        "acc_high": 0.33043,
+        "adequate": true
+      },
+      {
+        "offset": "4",
+        "n": 384,
+        "acceptance": 0.52083,
+        "auroc_neg_entropy": 0.70546,
+        "auroc_neg_gap": 0.85758,
+        "n_low": 117,
+        "acc_low": 0.73504,
+        "n_high": 126,
+        "acc_high": 0.33333,
+        "adequate": true
+      },
+      {
+        "offset": "5",
+        "n": 384,
+        "acceptance": 0.48177,
+        "auroc_neg_entropy": 0.77485,
+        "auroc_neg_gap": 0.85355,
+        "n_low": 148,
+        "acc_low": 0.75676,
+        "n_high": 135,
+        "acc_high": 0.22222,
+        "adequate": true
+      },
+      {
+        "offset": "6",
+        "n": 384,
+        "acceptance": 0.48438,
+        "auroc_neg_entropy": 0.75948,
+        "auroc_neg_gap": 0.89025,
+        "n_low": 143,
+        "acc_low": 0.74126,
+        "n_high": 122,
+        "acc_high": 0.22951,
+        "adequate": true
+      },
+      {
+        "offset": "7",
+        "n": 384,
+        "acceptance": 0.44531,
+        "auroc_neg_entropy": 0.74107,
+        "auroc_neg_gap": 0.86303,
+        "n_low": 130,
+        "acc_low": 0.68462,
+        "n_high": 137,
+        "acc_high": 0.24818,
+        "adequate": true
+      },
+      {
+        "offset": "8",
+        "n": 384,
+        "acceptance": 0.45052,
+        "auroc_neg_entropy": 0.77064,
+        "auroc_neg_gap": 0.85972,
+        "n_low": 133,
+        "acc_low": 0.70677,
+        "n_high": 133,
+        "acc_high": 0.21053,
+        "adequate": true
+      }
+    ],
+    "spearman_test": {
+      "normalized_entropy": -0.43355,
+      "top1_probability": 0.43145,
+      "top1_top2_margin": 0.40844,
+      "existing_draftability_score": -0.62324,
+      "teacher_entropy": -0.09787,
+      "corrupt_entropy": -0.54014
+    },
+    "diagnostic_alternatives": {
+      "top1_probability": {
+        "auroc": 0.88183,
+        "delta_vs_progress": 0.0277
+      },
+      "top1_top2_margin": {
+        "auroc": 0.88296,
+        "delta_vs_progress": 0.02883
+      },
+      "effective_support": {
+        "auroc": 0.86356,
+        "delta_vs_progress": 0.00943
+      }
+    },
+    "comparisons": {
+      "4_vs_1_auroc_delta": 0.01977,
+      "6_vs_5_auroc_delta": 0.01928,
+      "4_vs_1_bootstrap": {
+        "delta_mean": 0.01981,
+        "ci_low": 0.01231,
+        "ci_high": 0.02754,
+        "n_resamples": 2000
+      },
+      "6_vs_5_bootstrap": {
+        "delta_mean": 0.0193,
+        "ci_low": 0.01206,
+        "ci_high": 0.0266,
+        "n_resamples": 2000
+      },
+      "6_vs_5_logloss": {
+        "reduction_mean": 0.027311,
+        "ci_low": 0.017272,
+        "ci_high": 0.037541
+      }
+    },
+    "verdict": {
+      "criteria": {
+        "c1_monotone": true,
+        "c2_within_cell": true,
+        "c3_auroc_gain_over_progress": false,
+        "c4_beats_shuffled": true,
+        "c5_adds_to_existing": true,
+        "c6_bootstrap_nontrivial": true
+      },
+      "n_adequate_cells": 7,
+      "n_cells_signed": 7,
+      "quintile_inversions": [
+        -0.27244,
+        -0.10588,
+        -0.1685,
+        -0.05891
+      ],
+      "verdict": "FAIL"
+    }
+  }
+}
