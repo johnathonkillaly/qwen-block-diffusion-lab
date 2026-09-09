@@ -20,6 +20,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
+sys.path.insert(0, str(REPO / "src"))  # noqa: E402 - kept next to the import below
+from qdif.uno.resource_guard import HeavyExecutionBlocked  # noqa: E402
+
 MODEL_ID = "unsloth/Qwen3.5-4B-Base"
 
 
@@ -32,7 +35,10 @@ def provenance(extra: dict | None = None) -> dict:
 
     import mlx.core as mx
 
+    from qdif.uno.resource_guard import guard_report
+
     record = {
+        "resource_guard": guard_report(),
         "git_sha": run("git", "rev-parse", "HEAD"),
         "git_dirty": bool(run("git", "status", "--porcelain")),
         "python": sys.version.split()[0],
@@ -52,10 +58,20 @@ def write_json(path: Path, payload: dict) -> None:
     print(f"[uno] wrote {path}")
 
 
-def load_model(rank: int | None = None, **adapter_kwargs):
+def load_model(rank: int | None = None, purpose: str = "loading Qwen3.5-4B",
+               **adapter_kwargs):
+    """Instantiate the frozen backbone — the single choke point for heavy work.
+
+    The Act IV-U5 resource guard runs here rather than in each subcommand, because
+    every path that costs real unified memory goes through this function and a guard
+    that has to be remembered at each call site is a guard that will be forgotten at
+    one of them. It reads the process table and raises; it never touches anything.
+    """
     from qdif.mlx_backend.loader import resolve_mlx_model_path
     from qdif.uno.model import load_uno_model
+    from qdif.uno.resource_guard import assert_heavy_execution_allowed
 
+    assert_heavy_execution_allowed(purpose)
     path = resolve_mlx_model_path(MODEL_ID, None)
     print(f"[uno] checkpoint: {path}")
     model, report = load_uno_model(path)
@@ -432,6 +448,7 @@ def cmd_train(args) -> int:
         eval_every=args.eval_every,
         eval_batches=args.eval_batches,
         checkpoint_steps=[int(x) for x in args.checkpoint_steps.split(",") if x.strip()],
+        noise_align_width=args.noise_align_width,
     )
     train_source, val_source = build_sources(
         model.tokenizer,
@@ -1625,6 +1642,368 @@ def _draftability_by_offset(model, windows, batch_keys, block_size, reset_adapte
     }
 
 
+
+# ------------------------------------------------------------------- u5 eval
+
+
+def _paired_bootstrap(pairs, resamples: int = 10000, seed: int = 20260905) -> dict:
+    """Paired bootstrap CI on the mean of `treatment - control`.
+
+    `pairs` are `(control, treatment)` measured on the *same* unit -- the same prompt
+    with the same draft-noise stream, or the same held-out row. Under the keyed harness
+    those units are deterministic, so the pairing removes the between-unit variance
+    that dominates the independent spread (criteria sec.2.1 measured a between-session
+    sd of 2.36 tok/s against a within-unit repeat noise of 0.15).
+
+    Resampling the *differences* rather than the two arms separately is what makes the
+    interval a statement about the treatment instead of about prompt difficulty.
+    """
+    import random
+
+    diffs = [treatment - control for control, treatment in pairs]
+    n = len(diffs)
+    if n == 0:
+        return {"n": 0, "mean_diff": 0.0, "ci_low": 0.0, "ci_high": 0.0,
+                "p_positive": 0.0, "significant": False}
+    mean_diff = sum(diffs) / n
+    if n == 1:
+        return {"n": 1, "mean_diff": round(mean_diff, 6), "ci_low": None,
+                "ci_high": None, "p_positive": None, "significant": False}
+
+    rng = random.Random(seed)
+    means = []
+    for _ in range(resamples):
+        total = 0.0
+        for _ in range(n):
+            total += diffs[rng.randrange(n)]
+        means.append(total / n)
+    means.sort()
+    low = means[int(0.025 * resamples)]
+    high = means[min(resamples - 1, int(0.975 * resamples))]
+    variance = sum((d - mean_diff) ** 2 for d in diffs) / (n - 1)
+    return {
+        "n": n,
+        "mean_diff": round(mean_diff, 6),
+        "paired_se": round((variance / n) ** 0.5, 6),
+        "ci_low": round(low, 6),
+        "ci_high": round(high, 6),
+        "p_positive": round(sum(1 for m in means if m > 0) / resamples, 4),
+        # "beyond measured noise" means the 95% interval excludes zero
+        "significant": bool(low > 0 or high < 0),
+        "wins": sum(1 for d in diffs if d > 0),
+        "losses": sum(1 for d in diffs if d < 0),
+    }
+
+
+def cmd_u5_eval(args) -> int:
+    """Act IV-U5: every arm decodes at K=4, measured pairwise in one session.
+
+    The defining rule (brief sec.12) is that the primary comparison is at
+    `K_decode = 4` for every arm, whatever horizon it was trained at. K=6/K=8 decoding
+    is recorded as a diagnostic and never determines the verdict.
+
+    What this adds over `u4-eval` is per-unit retention: the tok/s, TPF and accepted
+    counts of every prompt, and the agreement of every held-out row, are kept rather
+    than aggregated away. That is what makes a *paired* comparison possible -- and
+    pairing is the whole reason U5 can resolve a 2% effect that U4's independent
+    medians could not.
+    """
+    import mlx.core as mx
+
+    from qdif.uno.cost_model import (
+        CycleCost, ceiling, distribution_from_counts,
+        predicted_end_to_end_tokens_per_second, predicted_tokens_per_second,
+        predicted_tpf, speedup_table, survival_curve,
+    )
+    from qdif.uno.data import build_sources, prompt_suite_tokens
+    from qdif.uno.decode import ar_greedy_generate, uno_greedy_generate
+    from qdif.uno.gated_lora import gated_lora_modules
+    from qdif.uno.losses import total_variation
+    from qdif.uno.metrics import slot_metrics
+    from qdif.uno.rng import EVAL_NOISE, stream_key, stream_report
+    from qdif.uno.teacher import build_uno_batch
+    from qdif.uno.trainer import load_adapter
+
+    model, _ = load_model(rank=args.rank, full_attention=True, mlp=True,
+                          purpose="Act IV-U5 evaluation")
+    fingerprint = model.fingerprint(full=True)
+    pristine = {id(m): (m.lora_a, m.lora_b) for m in gated_lora_modules(model.base)}
+    decode_blocks = [int(b) for b in args.block_sizes.split(",")]
+    primary = args.primary_block
+    if primary not in decode_blocks:
+        decode_blocks.insert(0, primary)
+
+    prompts = prompt_suite_tokens(model.tokenizer)
+    _, val_source = build_sources(
+        model.tokenizer, width=args.window, batch_size=args.batch_size,
+        train_windows=8, val_windows=args.val_windows, seed=args.seed,
+        eos_id=model.tokenizer.eos_token_id,
+    )
+    windows = [next(val_source) for _ in range(args.eval_batches)]
+    eval_noise_seed = args.eval_noise_seed if args.eval_noise_seed is not None else args.seed
+    batch_keys = [stream_key(eval_noise_seed, EVAL_NOISE, i) for i in range(len(windows))]
+    print(f"[u5] {len(windows) * args.batch_size} held-out rows, {len(prompts)} prompts, "
+          f"primary K_decode={primary}, diagnostics {decode_blocks}, "
+          f"noise stream {args.noise_stream_seed}, align width {args.noise_align_width}")
+
+    def reset_adapter():
+        for module in gated_lora_modules(model.base):
+            a, b = pristine[id(module)]
+            module.lora_a, module.lora_b = a, mx.zeros_like(b)
+        mx.eval(model.base.parameters())
+
+    # ---- AR baseline, in this session --------------------------------------
+    print("\n== AR baseline (this session) ==")
+    reset_adapter()
+    ar_rows, ar_reference = [], {}
+    for domain, text, ids in prompts:
+        for _ in range(args.warmup):
+            ar_greedy_generate(model, ids, max_tokens=8)
+        speeds = []
+        for _ in range(args.repeats):
+            tokens, st = ar_greedy_generate(model, ids, max_tokens=args.tokens)
+            speeds.append(st.tokens_per_second)
+        ar_reference[text] = tokens
+        ar_rows.append({"domain": domain, "prompt": text,
+                        "tokens_per_second": max(speeds), "forwards": st.forwards})
+    ar_median, ar_std, ar_mean = _median_std([r["tokens_per_second"] for r in ar_rows])
+    print(f"  AR {ar_median:.2f} tok/s (mean {ar_mean:.2f}, sd across prompts {ar_std:.2f})")
+
+    arms = [a.split("=", 1) for a in args.arm]
+    results = []
+
+    for name, path in arms:
+        print(f"\n== arm {name} ==")
+        reset_adapter()
+        n_loaded = 0 if not path else load_adapter(
+            model, str(Path(path) / "adapter.safetensors")
+            if Path(path).is_dir() else path)
+        entry = {"arm": name, "path": path, "adapter_tensors": n_loaded, "per_block": {}}
+
+        for block_size in decode_blocks:
+            # ---- held-out teacher-forced, per row ---------------------------
+            tf, tv_total, rows_n = [], 0.0, 0
+            per_row_prefix, per_row_agree = [], []
+            for index, chunk in enumerate(windows):
+                batch = build_uno_batch(
+                    chunk, block_size=block_size, mask_token_id=model.mask_token_id,
+                    vocab_size=model.vocab_size, corruption="full",
+                    key=batch_keys[index], noise_align_width=args.noise_align_width,
+                )
+                teacher = mx.stop_gradient(
+                    model.ar_logits(batch.teacher_ids)[:, batch.supervised_slice, :])
+                student = mx.stop_gradient(
+                    model.draft_logits(batch.student_ids, batch.lora_mask)[
+                        :, batch.supervised_slice, :])
+                tf.append(slot_metrics(student, teacher, batch.targets))
+                tv_total += float(total_variation(student, teacher).item()) * batch.batch_size
+                rows_n += batch.batch_size
+
+                # per-row accepted prefix, so the comparison can be paired by row
+                agree = (mx.argmax(student, axis=-1) == mx.argmax(teacher, axis=-1))
+                spec = agree[:, 1:].astype(mx.float32)
+                prefix = mx.sum(mx.cumprod(spec, axis=1), axis=1)
+                per_row_prefix.extend(float(v) for v in prefix.tolist())
+                per_row_agree.extend(float(v) for v in mx.mean(spec, axis=1).tolist())
+
+            def merge(key):
+                vals = [m[key] for m in tf]
+                if isinstance(vals[0], list):
+                    return [round(sum(c) / len(c), 5) for c in zip(*vals)]
+                return round(sum(vals) / len(vals), 5)
+
+            per_slot = merge("agree_per_slot")
+            teacher_forced = {
+                "agree_specs": merge("agree_specs"),
+                "agree_per_slot": per_slot,
+                "agree_per_offset": {f"+{j + 1}": per_slot[j] for j in range(len(per_slot))},
+                "seed_row_agreement": per_slot[0],
+                "mean_accepted_prefix": merge("mean_accepted_prefix"),
+                "full_block_rate": merge("full_block_rate"),
+                "validation_tv": round(tv_total / rows_n, 5),
+                "rows": rows_n,
+                "per_row_accepted_prefix": [round(v, 4) for v in per_row_prefix],
+                "per_row_agreement": [round(v, 4) for v in per_row_agree],
+            }
+            if abs(per_slot[0] - 1.0) > 1e-6:
+                print(f"  !! seed-row agreement {per_slot[0]:.6f} != 1.0 — the gate is "
+                      f"leaking onto clean rows; every acceptance number is suspect")
+
+            # ---- free-running decode, per prompt ----------------------------
+            hist = {}
+            prop, ver, com, ovh, prefills = [], [], [], [], []
+            per_prompt = []
+            forwards = tokens_total = replays = 0
+            for prompt_index, (domain, text, ids) in enumerate(prompts):
+                stream = args.noise_stream_seed + prompt_index
+                for _ in range(args.warmup):
+                    uno_greedy_generate(model, ids, max_tokens=8, block_size=block_size,
+                                        transaction_mode="snapshot", noise_stream_seed=stream)
+                best, best_tokens = None, None
+                for _ in range(args.repeats):
+                    toks, st = uno_greedy_generate(
+                        model, ids, max_tokens=args.tokens, block_size=block_size,
+                        transaction_mode="snapshot", noise_stream_seed=stream)
+                    if best is None or st.tokens_per_second > best.tokens_per_second:
+                        best, best_tokens = st, toks
+                forwards += best.forwards
+                tokens_total += best.tokens
+                replays += best.replay_forwards
+                for a in best.accepted_per_cycle:
+                    hist[a] = hist.get(a, 0) + 1
+                d = best.to_dict()
+                prop.append(d["proposal_ms_per_cycle"]); ver.append(d["verify_ms_per_cycle"])
+                com.append(d["commit_ms_per_cycle"]); ovh.append(d["overhead_ms_per_cycle"])
+                prefills.append(1000.0 * best.prefill_seconds)
+                ref = ar_reference[text]
+                per_prompt.append({
+                    "domain": domain, "prompt": text,
+                    "tokens_per_second": round(best.tokens_per_second, 4),
+                    "tokens_per_forward": round(best.tokens_per_forward, 5),
+                    "mean_accepted_specs": round(
+                        sum(best.accepted_per_cycle) / max(len(best.accepted_per_cycle), 1), 5),
+                    "cycles": best.cycles,
+                    "ar_agreement": round(
+                        sum(x == y for x, y in zip(best_tokens, ref)) / max(len(ref), 1), 4),
+                })
+
+            def avg(values):
+                return sum(values) / len(values)
+
+            med, sd, mean = _median_std([r["tokens_per_second"] for r in per_prompt])
+            cost = CycleCost(avg(prop), avg(ver), avg(com), avg(ovh))
+            distribution = distribution_from_counts(hist)
+            offered = block_size - 1
+            cycles = sum(hist.values())
+            free_running = {
+                "tokens_per_forward": round(tokens_total / forwards, 5),
+                "forwards_per_token": round(forwards / tokens_total, 5),
+                "replay_forwards": replays,
+                "cycles": cycles,
+                "median_tokens_per_second": round(med, 3),
+                "mean_tokens_per_second": round(mean, 3),
+                "std_tokens_per_second": round(sd, 3),
+                "speedup_vs_ar": round(med / ar_median, 4),
+                "acceptance_histogram": {str(k): v for k, v in sorted(hist.items())},
+                "mean_accepted_specs": round(
+                    sum(k * v for k, v in hist.items()) / cycles, 5),
+                "acceptance_rate": round(
+                    sum(k * v for k, v in hist.items()) / (cycles * offered), 5)
+                    if offered else 0.0,
+                "full_block_rate": round(hist.get(offered, 0) / cycles, 5),
+                "survival": survival_curve(block_size, distribution),
+                "cycle_cost_ms": cost.to_dict(),
+                "prefill_ms": round(avg(prefills), 4),
+                "predicted_tokens_per_second": round(
+                    predicted_end_to_end_tokens_per_second(
+                        block_size, distribution, cost, avg(prefills), args.tokens), 3),
+                "predicted_steady_state_tokens_per_second": round(
+                    predicted_tokens_per_second(block_size, distribution, cost), 3),
+                "predicted_tpf": round(predicted_tpf(block_size, distribution), 5),
+                "ar_agreement": round(avg([r["ar_agreement"] for r in per_prompt]), 4),
+                "ceiling": ceiling(block_size, cost, ar_median),
+                "speedup_requirements": speedup_table(block_size, cost, ar_median),
+                "per_prompt": per_prompt,
+            }
+            free_running["cost_model_error_pct"] = round(
+                100 * (free_running["predicted_tokens_per_second"] - med) / med, 3)
+
+            entry["per_block"][f"K{block_size}"] = {
+                "teacher_forced": teacher_forced, "free_running": free_running}
+            tag = "PRIMARY" if block_size == primary else "diag   "
+            print(f"  [{tag}] K={block_size} tf-agree {teacher_forced['agree_specs']:.4f} "
+                  f"val-tv {teacher_forced['validation_tv']:.4f} | "
+                  f"accept {free_running['acceptance_rate']:.4f} "
+                  f"prefix {free_running['mean_accepted_specs']:.4f} "
+                  f"TPF {free_running['tokens_per_forward']:.4f} | "
+                  f"{med:.2f} tok/s ({free_running['speedup_vs_ar']:.3f}x AR)")
+
+        entry["draftability"] = _draftability_by_offset(
+            model, windows, batch_keys, primary, reset_adapter, pristine)
+        q = entry["draftability"]
+        print("  draftability quintile acceptance: "
+              + " ".join(f"q{b['bucket'] + 1}={b['agreement']:.3f}" for b in q["buckets"]))
+        entry["peak_memory_gb"] = round(mx.get_peak_memory() / 1e9, 3)
+        entry["backbone_digest"] = model.fingerprint(full=True).digest
+        entry["backbone_unchanged"] = entry["backbone_digest"] == fingerprint.digest
+        results.append(entry)
+
+    # ---- paired transfer statistics against the control arm ----------------
+    control = next((e for e in results if e["arm"] == args.control), None)
+    transfer = []
+    if control is None:
+        print(f"\n[u5] control arm {args.control!r} not among {[e['arm'] for e in results]};"
+              f" skipping paired statistics")
+    else:
+        print(f"\n== paired transfer vs control {args.control} (K_decode={primary}) ==")
+        ck = control["per_block"][f"K{primary}"]
+        for entry in results:
+            if entry["arm"] == args.control:
+                continue
+            ek = entry["per_block"][f"K{primary}"]
+            row = {"arm": entry["arm"], "control": args.control, "K_decode": primary}
+            for label, cvals, evals_ in (
+                ("tok_s", [r["tokens_per_second"] for r in ck["free_running"]["per_prompt"]],
+                          [r["tokens_per_second"] for r in ek["free_running"]["per_prompt"]]),
+                ("tpf", [r["tokens_per_forward"] for r in ck["free_running"]["per_prompt"]],
+                        [r["tokens_per_forward"] for r in ek["free_running"]["per_prompt"]]),
+                ("accepted_specs",
+                 [r["mean_accepted_specs"] for r in ck["free_running"]["per_prompt"]],
+                 [r["mean_accepted_specs"] for r in ek["free_running"]["per_prompt"]]),
+                ("tf_accepted_prefix", ck["teacher_forced"]["per_row_accepted_prefix"],
+                                       ek["teacher_forced"]["per_row_accepted_prefix"]),
+                ("tf_agreement", ck["teacher_forced"]["per_row_agreement"],
+                                 ek["teacher_forced"]["per_row_agreement"]),
+            ):
+                row[label] = _paired_bootstrap(list(zip(cvals, evals_)),
+                                               resamples=args.bootstrap)
+            # relative transfer gains (brief sec.14)
+            row["delta_acceptance"] = round(
+                ek["free_running"]["mean_accepted_specs"]
+                - ck["free_running"]["mean_accepted_specs"], 5)
+            row["delta_tpf"] = round(
+                ek["free_running"]["tokens_per_forward"]
+                - ck["free_running"]["tokens_per_forward"], 5)
+            row["delta_tok_s_pct"] = round(
+                100 * (ek["free_running"]["median_tokens_per_second"]
+                       - ck["free_running"]["median_tokens_per_second"])
+                / ck["free_running"]["median_tokens_per_second"], 3)
+            row["delta_agreement_by_offset"] = {
+                k: round(v - ck["teacher_forced"]["agree_per_offset"].get(k, 0.0), 5)
+                for k, v in ek["teacher_forced"]["agree_per_offset"].items()}
+            transfer.append(row)
+            boot = row["tok_s"]
+            print(f"  {entry['arm']:>12s}  d-tok/s {row['delta_tok_s_pct']:+6.2f}%  "
+                  f"paired mean {boot['mean_diff']:+.3f} "
+                  f"[{boot['ci_low']:+.3f}, {boot['ci_high']:+.3f}] "
+                  f"{'SIGNIFICANT' if boot['significant'] else 'n.s.'} "
+                  f"({boot['wins']}/{boot['n']} prompts)  "
+                  f"d-prefix {row['delta_acceptance']:+.4f}  d-TPF {row['delta_tpf']:+.4f}")
+
+    payload = {
+        "provenance": provenance({"stage": "u5-eval"}),
+        "offset_convention": OFFSET_NOTE,
+        "primary_block": primary,
+        "control_arm": args.control,
+        "ar_baseline": {"median_tokens_per_second": round(ar_median, 3),
+                        "mean_tokens_per_second": round(ar_mean, 3),
+                        "std_tokens_per_second": round(ar_std, 3), "rows": ar_rows},
+        "harness": {"tokens": args.tokens, "repeats": args.repeats, "warmup": args.warmup,
+                    "eval_rows": len(windows) * args.batch_size, "prompts": len(prompts),
+                    "window": args.window, "seed": args.seed,
+                    "eval_noise_seed": eval_noise_seed,
+                    "noise_stream_seed": args.noise_stream_seed,
+                    "noise_align_width": args.noise_align_width,
+                    "decode_blocks": decode_blocks, "bootstrap": args.bootstrap,
+                    "rng": stream_report(args.seed)},
+        "backbone_digest": fingerprint.digest,
+        "arms": results,
+        "transfer": transfer,
+    }
+    write_json(Path(args.out), payload)
+    return 0
+
+
 # ------------------------------------------------------------------------ main
 
 
@@ -1675,6 +2054,10 @@ def main() -> int:
     pt.add_argument("--eval-batches", type=int, default=4)
     pt.add_argument("--seed", type=int, default=20260903)
     pt.add_argument("--checkpoint-steps", default="", help="comma-separated steps to checkpoint")
+    pt.add_argument("--noise-align-width", type=int, default=None,
+                    help="draw draft corruption at this block width and keep the "
+                         "rightmost block_size-1 columns, so arms at different K share "
+                         "noise on the positions they share (Act IV-U5)")
     pt.add_argument("--resume-from", default="", metavar="DIR",
                     help="checkpoint directory to continue from (exact resume)")
     pt.add_argument("--resume-eval-every", type=int, default=100,
@@ -1762,8 +2145,37 @@ def main() -> int:
     p4.add_argument("--out", default="runs/u4a/eval.json")
     p4.set_defaults(func=cmd_u4_eval)
 
+    p5 = sub.add_parser("u5-eval", help="Act IV-U5: paired transfer evaluation at K_decode=4")
+    p5.add_argument("--arm", action="append", default=[], metavar="NAME=PATH")
+    p5.add_argument("--control", default="A_k4", help="arm name used as the baseline")
+    p5.add_argument("--primary-block", type=int, default=4,
+                    help="K_decode for the primary comparison; every arm uses it")
+    p5.add_argument("--block-sizes", default="4,6,8",
+                    help="decode block sizes to record; only --primary-block decides the verdict")
+    p5.add_argument("--rank", type=int, default=16)
+    p5.add_argument("--window", type=int, default=128)
+    p5.add_argument("--batch-size", type=int, default=4)
+    p5.add_argument("--eval-batches", type=int, default=64)
+    p5.add_argument("--val-windows", type=int, default=256)
+    p5.add_argument("--tokens", type=int, default=48)
+    p5.add_argument("--repeats", type=int, default=3)
+    p5.add_argument("--warmup", type=int, default=1)
+    p5.add_argument("--seed", type=int, default=20260903)
+    p5.add_argument("--eval-noise-seed", type=int, default=None)
+    p5.add_argument("--noise-stream-seed", type=int, default=20260905)
+    p5.add_argument("--noise-align-width", type=int, default=8)
+    p5.add_argument("--bootstrap", type=int, default=10000)
+    p5.add_argument("--out", default="runs/u5/eval.json")
+    p5.set_defaults(func=cmd_u5_eval)
+
     args = parser.parse_args()
-    return args.func(args)
+    try:
+        return args.func(args)
+    except HeavyExecutionBlocked as blocked:
+        # A clean stop, not a crash: the machine is busy with something more important.
+        # Printed without a traceback so the message is the message.
+        print(f"\n[guard] {blocked}", file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ diffusion** model, using LoRA on a mostly-frozen backbone.
 > | **Act IV-U2** | transactional recurrent verification | `recurrence.py`, `transaction.py`, `docs/act4u2_*.md` |
 > | **Act IV-U3** | acceptance scaling | `cost_model.py`, `scripts/u3_report.py`, `docs/act4u3_*.md` |
 > | **Act IV-U4** | horizon scaling | `rng.py`, `scripts/u4_report.py`, `docs/act4u4_*.md` |
+> | **Act IV-U5** | training-horizon transfer / *Train Long, Decode Short* | `resource_guard.py`, `scripts/u5_*.{py,sh}`, `docs/act4u5_*.md` |
 >
 > Act IV-N was paused at "ready to run Stage 2" and is **untouched**. Act IV-U is a
 > separate track added later at the user's request, reproducing IFM's Uno. They share
@@ -119,6 +120,7 @@ transaction.py  ACT IV-U2: begin/commit_prefix/rollback; replay|snapshot|rewind
 cost_model.py   ACT IV-U3/U4: acceptance -> forwards/token -> tok/s; v2 adds a
                 measured cycle-overhead term, survival curves and slot economics
 rng.py          ACT IV-U4: named, separated PRNG streams keyed on (seed, stream, step)
+resource_guard.py ACT IV-U5: refuses heavy MLX work while another job owns the Mac
 metrics.py      per-slot agreement, entropy buckets
 trainer.py      training loop, saturation guard, adapter save/load, exact resume
 data.py         wikitext windows + the held-out prompt suite
@@ -223,6 +225,60 @@ actually published, tagged confirmed / inferred / our approximation),
 [`docs/act4u_design.md`](docs/act4u_design.md),
 [`docs/act4u_preregistered_criteria.md`](docs/act4u_preregistered_criteria.md) (frozen),
 [`docs/act4u_results.md`](docs/act4u_results.md).
+
+**Status: Act IV-U..U4 complete; Act IV-U5 is PREPARED but NOT RUN.**
+
+### Act IV-U5 — *Train Long, Decode Short* (prepared, execution blocked)
+
+U4 produced one observation nobody pre-registered: 3200 steps at K=6/K=8 improved
+**K=4** decoding more than 9600 further K=4 steps did. It had **no matched control** --
+nothing in U4 trained K=4 for those same 3200 steps -- so it is a hypothesis, not a
+result, and must not be cited as one. U5 supplies the control:
+
+```
+A_k4    K_train=4    the control U4 never had
+B_k6    K_train=6
+C_k8    K_train=8    the U4 observation, now controlled
+D_curr  4 -> 6 -> 8  IFM's curriculum shape
+```
+
+All four resume from one byte-identical checkpoint (`runs/u4a/step-12800`), get 3200
+matched steps, and **all decode at K=4** -- the question is not whether K=8 decoding
+improved, it is whether K=8 *training* made a better K=4 drafter.
+
+Everything is built and tested: [`docs/act4u5_design.md`](docs/act4u5_design.md),
+[`docs/act4u5_preregistered_criteria.md`](docs/act4u5_preregistered_criteria.md)
+(frozen), `scripts/u5_launch.sh`, `scripts/u5_report.py`, `scripts/u5_start_check.py`.
+**Heavy execution is blocked by a BoothGPT pretraining job on this Mac** -- see the
+resource guard below. To run it when the machine is free:
+
+```bash
+bash scripts/u5_launch.sh
+```
+
+That command waits, read-only, until the machine is free and then runs the whole
+experiment. It cannot start anything while the guard is tripped.
+
+Two things U5 fixed that would have made the arms incomparable:
+
+* **Right-aligned corruption.** Draft rows end at `W-2` for every block size, but an
+  MLX draw of shape `(B,3)` is not a sub-array of one of shape `(B,7)`, so arms saw
+  different noise under the same key. `noise_align_width` makes K=4/6/8 share noise on
+  every position they share. `None` reproduces U3/U4 exactly.
+* **Curriculum staging on a resume.** Stages divided the *absolute* step axis, so an
+  arm resumed at 12,800 of 16,000 would have trained entirely at K=8 -- a curriculum
+  arm that is not a curriculum.
+
+### The resource guard
+
+`src/qdif/uno/resource_guard.py` blocks `load_model()` -- the one place Qwen3.5-4B is
+instantiated -- whenever a BoothGPT pretraining process is visible. It **reads `ps` and
+nothing else**: a test tokenises the module and asserts `kill`/`signal`/`terminate`/
+`renice`/`Popen` never appear as code tokens, and that `subprocess.run` occurs exactly
+once with the fixed argument list `["ps", "-axo", "pid=,command="]`. It fails closed on
+an unreadable process table and does not detect itself. Override with
+`QDIF_ALLOW_HEAVY_DURING_PRETRAIN=1`, which warns loudly; do not use it while a
+pretraining run is live.
 
 **Status: Act IV-U, U2, U3 and U4 all complete.** U4 (horizon scaling) is the most
 recent: [`docs/act4u4_preregistered_criteria.md`](docs/act4u4_preregistered_criteria.md)

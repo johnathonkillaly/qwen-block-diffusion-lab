@@ -78,6 +78,7 @@ def build_uno_batch(
     shuffle_targets: bool = False,
     rng_key: mx.array | None = None,
     key: mx.array | None = None,
+    noise_align_width: int | None = None,
 ) -> UnoBatch:
     """Build one batch from `[B, W]` token windows.
 
@@ -93,6 +94,25 @@ def build_uno_batch(
     while the student's is left alone, so the adapter is asked to match a future that
     belongs to somebody else's context. It must fail. If it does not, the adapter is
     not using the context and any apparent learning is a context-free marginal.
+
+    `noise_align_width` makes the corruption comparable **across block sizes**, which is
+    what Act IV-U5 needs and what U3/U4 did not have to care about.
+
+    The draft rows for block size `L` sit at absolute positions `W-L … W-2`, so the
+    rightmost draft row is at `W-2` for *every* `L`. Drawing noise of shape
+    `(B, L-1)` therefore gives each block size a different realisation even under the
+    same key -- an MLX draw of shape `(B, 3)` is not a sub-array of one of shape
+    `(B, 7)`, because the row stride differs. Two arms would then differ in their
+    corruption as well as in their horizon, and the horizon would not be the only
+    experimental variable.
+
+    Setting `noise_align_width = A >= L` draws at width `A-1`, indexed so that column
+    `A-1-r` is the draft row `r` positions left of `W-2`, and keeps the last `L-1`
+    columns. Arms at `L=4` and `L=8` then see **identical noise tokens and identical
+    keep decisions at every position they share**. The per-sequence corruption rate is
+    already block-size independent (shape `(B, 1)`), so it needs no alignment.
+
+    `None` preserves the U3/U4 behaviour exactly, so those runs stay reproducible.
     """
     if windows.ndim != 2:
         raise ValueError(f"windows must be [B, W], got {tuple(windows.shape)}")
@@ -103,6 +123,11 @@ def build_uno_batch(
         raise ValueError(
             f"window width {width} is too small for block_size {block_size}; "
             f"need at least {block_size + 2}"
+        )
+    if noise_align_width is not None and noise_align_width < block_size:
+        raise ValueError(
+            f"noise_align_width {noise_align_width} is smaller than block_size "
+            f"{block_size}; the alignment width must cover every arm's block"
         )
 
     block_start = width - block_size - 1
@@ -125,11 +150,18 @@ def build_uno_batch(
         noise_key, rate_key, draw_key = (
             (None, None, None) if key is None else tuple(mx.random.split(key, 3))
         )
-        noise = make_noise(
-            (batch, num_draft), noise_mode, mask_token_id, vocab_size,
+        # Draw at the alignment width, then keep the columns this block actually uses.
+        # See `noise_align_width` in the docstring: drawing at `num_draft` directly
+        # makes every arm's corruption a different realisation, because an MLX draw of
+        # shape (B, 3) is not a sub-array of one of shape (B, 7).
+        draw_width = num_draft if noise_align_width is None else noise_align_width - 1
+        keep_from = draw_width - num_draft
+        noise_full = make_noise(
+            (batch, draw_width), noise_mode, mask_token_id, vocab_size,
             seed=None if rng_key is None else int(rng_key.item()),
             key=noise_key,
         )
+        noise = noise_full[:, keep_from:]
         clean_tail = true_ids[:, block_start + 1 : block_start + 1 + num_draft]
         if corruption == "full":
             keep_noise = mx.ones((batch, num_draft), dtype=mx.float32)
@@ -137,8 +169,8 @@ def build_uno_batch(
         elif corruption == "uniform":
             rate = mx.random.uniform(shape=(batch, 1), key=rate_key)
             keep_noise = (
-                mx.random.uniform(shape=(batch, num_draft), key=draw_key) < rate
-            ).astype(mx.float32)
+                mx.random.uniform(shape=(batch, draw_width), key=draw_key) < rate
+            ).astype(mx.float32)[:, keep_from:]
             rate = rate.reshape(batch)
         else:
             raise ValueError(f"unknown corruption schedule {corruption!r}")
