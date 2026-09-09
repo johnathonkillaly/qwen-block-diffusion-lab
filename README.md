@@ -9,9 +9,11 @@ is to understand the transition:
 
 > autoregressive Qwen  ⟶  Qwen capable of block diffusion
 
-**Not affiliated with** Qwen/Alibaba, Unsloth, Apple, Google, or the FLARE authors. No
-novel architecture is claimed. Act III is a local, small-scale reproduction of ideas
-from a published paper — **not** a reproduction of its benchmark numbers.
+**Not affiliated with** Qwen/Alibaba, Unsloth, Apple, Google, the FLARE authors, or
+IFM. No novel architecture is claimed. Act III is a local, small-scale reproduction of
+ideas from a published paper — **not** a reproduction of its benchmark numbers.
+`src/qdif/uno/` is a from-source reproduction of IFM's public Uno training code and
+runtime (Apache-2.0) — see [Prior work](#prior-work).
 
 ---
 
@@ -45,6 +47,37 @@ corruption instead of random-token corruption, complementary mask views, and Gat
 DeltaNet block-end state scheduling. Run 1 aborted at step 125 when the
 canvas-conditioning probe collapsed — the timestep conditioner's bias had grown to 20×
 the token-embedding norm and swamped the canvas. Fixed, and run 2 worked.
+
+### RPRM diffusion — Stage 1: denoiser uncertainty as an early-exit signal — STOP
+A frozen Qwen3.5-4B backbone plus a small token-conditional LoRA (`src/qdif/uno/`,
+trained with `scripts/uno.py`) proposes and verifies blocks of tokens in a
+draft-then-verify decoding loop. This experiment asks a narrow, separately
+pre-registered question about that setup: does the denoiser's own per-token
+uncertainty predict whether the frozen verifier will accept a proposed token, strongly
+enough to justify adaptively exiting early on high-confidence positions?
+
+Denoiser entropy contains real, token-specific information about target acceptance,
+survives progress controls and shuffling, and is better behaved than teacher entropy,
+but the effect is only about **+0.022 AUROC** beyond the progress baseline versus the
+pre-registered **≥ 0.05** usefulness threshold. **Verdict: FAIL → STOP.** The
+early-exit mechanism itself (Stage 2) was **not run**, per the pre-registered stop
+rule — and independently, this adapter's decoding is single-shot (one forward
+produces every proposal in the block), so there is no per-token denoising loop for
+early exit to save work from, regardless of signal strength.
+
+A diagnostic top-1-probability variant scored slightly higher (+0.0358) but is
+reported as a diagnostic only — pre-registered as a diagnostic, not the primary
+measure, still misses the bar, and is **not used to rescue the verdict**. The result
+replicates independently on a second adapter/seed.
+
+[Stage 0 audit](RPRM_DIFFUSION_STAGE0_AUDIT.md) ·
+[Pre-registration](RPRM_DIFFUSION_PREREG.md) ·
+[Stage 1 results](RPRM_DIFFUSION_STAGE1_RESULTS.md)
+
+**What failed and why.** This experiment found a real denoiser-confidence signal but
+rejected it as operationally useful under a frozen effect-size criterion. The
+draft-then-verify architecture it was tested against is also single-shot, so adaptive
+per-position early exit cannot save inference work without changing the architecture.
 
 ---
 
@@ -110,6 +143,19 @@ Verify what the backend is actually doing, rather than trusting that it is:
 Other commands: `qdif inspect`, `arch-report`, `corrupt`, `act3-check`, `probe-bidir`,
 `act3-compare`, `p3-report`, `memory`.
 
+The RPRM analysis stage alone (seconds, no model, reruns against the committed CSVs
+in `results/rprm_stage1/`) is:
+
+```bash
+.venv-unsloth/bin/python scripts/rprm_stage1_analyze.py --tag primary
+```
+
+Extraction (~35 min on an M-series Mac; needs the adapter checkpoint, not included —
+see [`RPRM_DIFFUSION_STAGE0_AUDIT.md`](RPRM_DIFFUSION_STAGE0_AUDIT.md) for exact
+checkpoint provenance) and the `src/qdif/uno/` package it depends on: see the
+**Reproducing** section of
+[`RPRM_DIFFUSION_STAGE1_RESULTS.md`](RPRM_DIFFUSION_STAGE1_RESULTS.md).
+
 ---
 
 ## Hardware
@@ -136,6 +182,7 @@ installed RAM.
 
 Chronological notes, including the wrong turns:
 
+- [AGENTS.md](AGENTS.md) — how to run everything; the handoff contract; frozen-criteria index
 - [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) — Acts I & II, run by run
 - [docs/ACT3_JOURNAL.md](docs/ACT3_JOURNAL.md) — Act III, including the aborted run 1
 - [RESEARCH.md](RESEARCH.md) — the tracked research questions and their current status
@@ -146,6 +193,7 @@ Chronological notes, including the wrong turns:
 - [docs/FLARE_COMPARISON.md](docs/FLARE_COMPARISON.md) — mechanism-by-mechanism comparison
 - [docs/UNSLOTH_BACKEND.md](docs/UNSLOTH_BACKEND.md) — what Unsloth does on Apple Silicon, verified
 - [docs/QWEN38_MIGRATION.md](docs/QWEN38_MIGRATION.md) — what changes at 27B
+- [RPRM_DIFFUSION_STAGE0_AUDIT.md](RPRM_DIFFUSION_STAGE0_AUDIT.md), [RPRM_DIFFUSION_PREREG.md](RPRM_DIFFUSION_PREREG.md), [RPRM_DIFFUSION_STAGE1_RESULTS.md](RPRM_DIFFUSION_STAGE1_RESULTS.md) — the RPRM denoiser-uncertainty experiment (STOP), frozen and self-contained
 
 ---
 
@@ -161,6 +209,10 @@ Chronological notes, including the wrong turns:
 - **Unsloth** — Apple/MLX path and the Qwen3.5-specific Gated DeltaNet custom VJP.
 - **MLX / mlx-lm** — Apple.
 - **DiffusionGemma** — the original inspiration for attempting AR→diffusion conversion.
+- **Uno** — IFM (`github.com/ifm-ai/uno`, Apache-2.0). `src/qdif/uno/` is a
+  from-source reproduction of their training objective and draft-then-verify block
+  decoding, transcribed from their public training code, inference runtime and model
+  card. The RPRM experiment above tests denoiser uncertainty from this reproduction.
 
 Attribution and the full licence audit: **[THIRD_PARTY.md](THIRD_PARTY.md)**.
 

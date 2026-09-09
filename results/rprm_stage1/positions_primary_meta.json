@@ -1,0 +1,30 @@
+{
+  "provenance": {
+    "git_sha": "13e9d0594eb62a715fe5214b9d5270a9791620a3",
+    "git_dirty": true,
+    "python": "3.13.12",
+    "mlx": "0.32.1",
+    "model": "unsloth/Qwen3.5-4B-Base",
+    "stage": "rprm_stage1_extract",
+    "tag": "primary"
+  },
+  "adapter": "runs/u4b2-k8/adapter.safetensors",
+  "block_size": 8,
+  "batches": 320,
+  "batch_size": 4,
+  "window": 128,
+  "val_windows": 2048,
+  "seed": 20260908,
+  "vocab_size": 248320,
+  "log_vocab": 12.422472953796387,
+  "positions": 17920,
+  "windows": 1280,
+  "positions_per_stratum": {
+    "FULL": 8960,
+    "SCHEDULE": 8960
+  },
+  "acceptance_rate_per_stratum": {
+    "FULL": 0.18471,
+    "SCHEDULE": 0.52154
+  }
+}
