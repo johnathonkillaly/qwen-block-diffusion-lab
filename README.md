@@ -46,6 +46,71 @@ DeltaNet block-end state scheduling. Run 1 aborted at step 125 when the
 canvas-conditioning probe collapsed — the timestep conditioner's bias had grown to 20×
 the token-embedding norm and swamped the canvas. Fixed, and run 2 worked.
 
+### Act IV-U — Reproducing Uno diffusion distillation
+A from-source reproduction of IFM's **Uno**: a 100%-frozen, byte-hashed Qwen3.5-4B
+backbone plus a small token-conditional LoRA (0.50% of params, gated on only on
+diffusion-noise rows) proposes blocks of `K` tokens that the same frozen model then
+verifies and accepts or rejects — same output distribution, fewer sequential steps, if
+it works. Verdict: **ALGORITHMIC SIGNAL, NO SPEEDUP**. The adapter learns real
+predictive signal (K=2 mean spec agreement 0.391 vs 0.063 untrained, shuffled control
+0.039) and decodes losslessly, but the naive training-time replay forward held
+tokens-per-forward to 0.980 — below the 1.000 needed to ever beat autoregressive
+decoding. [Design](docs/act4u_design.md) ·
+[Criteria](docs/act4u_preregistered_criteria.md) ·
+[Results](docs/act4u_results.md)
+
+### Act IV-U2 — Transactional DeltaNet verification
+Removes the replay forward that Act IV-U identified as the next experiment: a DeltaNet
+recurrence that records per-token state, with begin/commit-prefix/rollback semantics
+(replay, snapshot, rewind transaction modes) so verification does not require redoing
+the draft pass. [Design](docs/act4u2_transactional_state.md) ·
+[Criteria](docs/act4u2_preregistered_criteria.md) ·
+[Results](docs/act4u2_results.md)
+
+### Act IV-U3 — Acceptance scaling turns into real throughput
+Scaling K=4 training (3200 steps) turns the U2 architectural fix into measured
+wall-clock speedup over autoregressive decoding, evaluated across every checkpoint in
+one session. [Criteria](docs/act4u3_preregistered_criteria.md) ·
+[Results](docs/act4u3_results.md) · [results/act4u3/](results/act4u3/)
+
+### Act IV-U4 — The useful parallel horizon is four tokens
+Horizon scaling across K ∈ {4, 6, 8}. Verdict: **K4 IS THE PRACTICAL FRONTIER**. K=8
+learns more and commits more tokens per forward but is 0.910× K=4 on wall clock — only
+three speculative slots pay for themselves at any block size tested. Best measured:
+**K=4, 59.08 tok/s, 1.195× AR**, lossless greedy, frozen backbone. 11 of 13
+pre-registered gates pass. [Criteria](docs/act4u4_preregistered_criteria.md) ·
+[Results](docs/act4u4_results.md) · [results/act4u4/](results/act4u4/)
+
+### RPRM diffusion — Stage 1: denoiser uncertainty as an early-exit signal — STOP
+A narrower, separately pre-registered test built **on top of** the frozen Act IV-U /
+U4 Uno adapters (`runs/u4b2-k8`, `runs/uno-k4-true`) — not part of the numbered
+Act IV-U series and not a revision of any Act IV-U verdict. It asks whether the
+denoiser's own per-token uncertainty predicts whether the frozen verifier will accept
+a proposed token, strongly enough to justify adaptive early exit.
+
+Denoiser entropy contains real, token-specific information about target acceptance,
+survives progress controls and shuffling, and is better behaved than teacher entropy,
+but the effect is only about **+0.022 AUROC** beyond the progress baseline versus the
+pre-registered **≥ 0.05** usefulness threshold. **Verdict: FAIL → STOP.** Stage 2
+(the early-exit mechanism itself) was **not run**, per the pre-registered stop rule —
+and independently, Uno's inference is single-shot (one adapter forward produces all
+`K−1` proposals), so there are no per-token denoising updates to exit early from even
+if the signal had cleared the bar.
+
+A diagnostic top-1-probability variant scored slightly higher (+0.0358) but is
+reported as a diagnostic only — it was pre-registered as a diagnostic, not the primary
+measure, still misses the bar, and is **not used to rescue the verdict**. The result
+replicates independently on a second adapter/seed.
+
+[Stage 0 audit](RPRM_DIFFUSION_STAGE0_AUDIT.md) ·
+[Pre-registration](RPRM_DIFFUSION_PREREG.md) ·
+[Stage 1 results](RPRM_DIFFUSION_STAGE1_RESULTS.md)
+
+**What failed and why.** This experiment found a real denoiser-confidence signal but
+rejected it as operationally useful under a frozen effect-size criterion. The current
+Uno architecture is also single-shot, so adaptive per-position early exit cannot save
+inference work without changing the architecture.
+
 ---
 
 ## Findings
@@ -110,6 +175,16 @@ Verify what the backend is actually doing, rather than trusting that it is:
 Other commands: `qdif inspect`, `arch-report`, `corrupt`, `act3-check`, `probe-bidir`,
 `act3-compare`, `p3-report`, `memory`.
 
+The Act IV-U (Uno) and RPRM tracks are driven by `scripts/uno.py` and
+`scripts/rprm_stage1_*.py` rather than `qdif`; see [AGENTS.md §7](AGENTS.md) for the
+Act IV-U commands and the **Reproducing** section of
+[RPRM_DIFFUSION_STAGE1_RESULTS.md](RPRM_DIFFUSION_STAGE1_RESULTS.md) for RPRM. The
+RPRM analysis stage alone (seconds, no model, reruns against the committed CSVs) is:
+
+```bash
+.venv-unsloth/bin/python scripts/rprm_stage1_analyze.py --tag primary
+```
+
 ---
 
 ## Hardware
@@ -136,6 +211,7 @@ installed RAM.
 
 Chronological notes, including the wrong turns:
 
+- [AGENTS.md](AGENTS.md) — how to run everything; the handoff contract; frozen-criteria index
 - [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) — Acts I & II, run by run
 - [docs/ACT3_JOURNAL.md](docs/ACT3_JOURNAL.md) — Act III, including the aborted run 1
 - [RESEARCH.md](RESEARCH.md) — the tracked research questions and their current status
@@ -146,6 +222,10 @@ Chronological notes, including the wrong turns:
 - [docs/FLARE_COMPARISON.md](docs/FLARE_COMPARISON.md) — mechanism-by-mechanism comparison
 - [docs/UNSLOTH_BACKEND.md](docs/UNSLOTH_BACKEND.md) — what Unsloth does on Apple Silicon, verified
 - [docs/QWEN38_MIGRATION.md](docs/QWEN38_MIGRATION.md) — what changes at 27B
+- [docs/act4u_uno_source_notes.md](docs/act4u_uno_source_notes.md) — what IFM's Uno actually published, tagged confirmed/inferred/our approximation
+- [docs/act4u_design.md](docs/act4u_design.md) / [act4u2_transactional_state.md](docs/act4u2_transactional_state.md) — Act IV-U / U2 design
+- [docs/act4u_results.md](docs/act4u_results.md) / [act4u2_results.md](docs/act4u2_results.md) / [act4u3_results.md](docs/act4u3_results.md) / [act4u4_results.md](docs/act4u4_results.md) — Act IV-U through U4 results, in order
+- [RPRM_DIFFUSION_STAGE0_AUDIT.md](RPRM_DIFFUSION_STAGE0_AUDIT.md), [RPRM_DIFFUSION_PREREG.md](RPRM_DIFFUSION_PREREG.md), [RPRM_DIFFUSION_STAGE1_RESULTS.md](RPRM_DIFFUSION_STAGE1_RESULTS.md) — the RPRM denoiser-uncertainty experiment (STOP), frozen and self-contained
 
 ---
 

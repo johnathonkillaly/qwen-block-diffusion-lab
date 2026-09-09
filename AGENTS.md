@@ -40,8 +40,10 @@ a rejected hypothesis are all recorded rather than cleaned up.
 Concretely, and non-negotiably:
 
 - **Pre-register criteria before running.** Never invent or adjust a threshold after
-  seeing results. `docs/ACT3_CRITERIA.md` and `docs/ACT4_CRITERIA.md` are frozen once
-  committed.
+  seeing results. `docs/ACT3_CRITERIA.md`, `docs/ACT4_CRITERIA.md`,
+  `docs/act4u_preregistered_criteria.md`, `docs/act4u2_preregistered_criteria.md`,
+  `docs/act4u3_preregistered_criteria.md`, `docs/act4u4_preregistered_criteria.md` and
+  `RPRM_DIFFUSION_PREREG.md` are frozen once committed.
 - **A falling loss is not a result.** Act I had loss fall 5× and accuracy reach 96.9%
   while the model had learned only to echo its input.
 - **A degenerate model cannot rank a mechanism.** Act II compared five arms that had
@@ -285,6 +287,34 @@ measured TPF 0.980 to a counterfactual 1.20–1.28.
    blow up (absmax 24 → 76), the softmax goes one-hot, `|g|` hits 0 and the run
    freezes at constant loss — which *reads as a null result*. Use IFM's 1e-5. A
    saturation guard in `trainer.py` now raises instead of letting this pass silently.
+
+### Complete — RPRM diffusion, Stage 1: denoiser uncertainty *(STOP)*
+
+A separate, narrower pre-registered test built **on top of** the frozen Act IV-U4
+checkpoints (`runs/u4b2-k8` primary, `runs/uno-k4-true` replication) — not a numbered
+Act IV-U stage and does not revise any Act IV-U verdict. Asks whether the denoiser's
+own per-token uncertainty predicts the frozen verifier's accept/reject decision well
+enough to justify adaptive early exit.
+
+**Verdict: FAIL on the pre-registered criterion → STOP.** Denoiser entropy is real,
+monotone, token-specific, survives progress controls and a shuffled-permutation
+control, and is better-behaved than teacher entropy (no low-end inversion) — but adds
+only **+0.022 AUROC** over a progress-only baseline against a pre-registered **≥0.05**
+bar. Replicates independently on a second adapter. Stage 2 (the early-exit mechanism)
+was **not run**, per the pre-registered stop rule — and separately, Uno decoding is
+single-shot (one adapter forward yields all `K−1` proposals), so there is no per-token
+denoising loop for early exit to save work from, regardless of signal strength. A
+diagnostic top-1-probability variant (+0.0358) is recorded as a diagnostic only, not a
+rescue.
+
+Docs: [`RPRM_DIFFUSION_STAGE0_AUDIT.md`](RPRM_DIFFUSION_STAGE0_AUDIT.md),
+[`RPRM_DIFFUSION_PREREG.md`](RPRM_DIFFUSION_PREREG.md) (frozen),
+[`RPRM_DIFFUSION_STAGE1_RESULTS.md`](RPRM_DIFFUSION_STAGE1_RESULTS.md). Code:
+`scripts/rprm_stage1_extract.py`, `scripts/rprm_stage1_analyze.py`. Data:
+`results/rprm_stage1/`.
+
+Do not reopen this experiment, move its thresholds, or treat the diagnostic top-1
+result as a pass.
 
 ### Paused — Act IV-N: structured corruption alphabet
 
