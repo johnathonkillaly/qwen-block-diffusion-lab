@@ -119,8 +119,16 @@ floor (%) = max( 1.0 , ⌈ 100 · max(|lo|, |hi|) / mean tok/s(B) ⌉ rounded up
 That is the largest mean difference an identical-code comparison produces at 95%, and
 never less than 1%.
 
-> **Reserved slot — filled from the calibration run before the pilot:**
-> floor = *(not yet measured)*
+> **Reserved slot — filled 2026-09-14 from the calibration run, before the pilot**
+> (`results/act4u6/calibrate.json`, `results/act4u6/floor.json`):
+>
+> * 81 units; incumbent mean 58.07 tok/s;
+> * mean(B₂ − B) = +0.092 tok/s, 95% CI [-0.244, +0.442];
+> * raw 0.76%, so **floor = 1.0%** (the 1.0% minimum binds).
+>
+> Descriptive only: the two identical arms' *medians* differ by 2.3% (56.62 vs 57.95
+> tok/s) while their paired mean differs by 0.16%. That is why every U6 decision uses the
+> paired mean.
 
 ## 7. Gates U6-4 and U6-5 — decisive
 

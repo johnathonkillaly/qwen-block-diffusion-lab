@@ -1,0 +1,11 @@
+{
+  "units": 81,
+  "mean_incumbent_tok_s": 58.06508641975309,
+  "mean_diff_tok_s": 0.09179,
+  "ci_tok_s": [
+    -0.244173,
+    0.441827
+  ],
+  "raw_percent": 0.760916804301346,
+  "floor_percent": 1.0
+}
