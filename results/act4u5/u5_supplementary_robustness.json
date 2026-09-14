@@ -1,0 +1,270 @@
+{
+  "session": {
+    "eval_file": "u5-eval",
+    "primary_block": 4,
+    "harness": {
+      "tokens": 48,
+      "repeats": 3,
+      "warmup": 1,
+      "eval_rows": 256,
+      "prompts": 15,
+      "window": 128,
+      "seed": 20260903,
+      "eval_noise_seed": 20260903,
+      "noise_stream_seed": 20260905,
+      "noise_align_width": 8,
+      "decode_blocks": [
+        4
+      ],
+      "bootstrap": 10000,
+      "rng": {
+        "seed": 20260903,
+        "streams": {
+          "train_noise": "0x6968999e92c72a55",
+          "train_corruption_rate": "0xda04fb4075c7d48a",
+          "eval_noise": "0x130e775f61ea0c92",
+          "eval_sampling": "0xb834d8602d137cf2",
+          "data_sampling": "0xd810757008c58a8b",
+          "bench_noise": "0x0ac88c86b1050400"
+        }
+      }
+    },
+    "backbone_unchanged_for_all_arms": true
+  },
+  "frozen_scoring": {
+    "c_arm_for_frozen_gates": "C_k8 (original), primary sessions",
+    "statement": "Not part of the preregistered scorecard. C_k8_r2 is not substituted for C_k8, the C launches are not averaged, and no frozen gate is rescored."
+  },
+  "principal_metric": "mean_accepted_prefix",
+  "a_launches": {
+    "mean_accepted_prefix": {
+      "values": {
+        "A_k4@16000": 1.02834,
+        "A_k4_r2@16000": 1.02881,
+        "A_k4_r3@16000": 0.9759
+      },
+      "mean": 1.0110166666666667,
+      "band": 0.05291000000000001
+    },
+    "tpf": {
+      "values": {
+        "A_k4@16000": 1.41454,
+        "A_k4_r2@16000": 1.43713,
+        "A_k4_r3@16000": 1.40351
+      },
+      "mean": 1.4183933333333334,
+      "band": 0.03361999999999998
+    },
+    "tok_s": {
+      "values": {
+        "A_k4@16000": 57.68355333333333,
+        "A_k4_r2@16000": 57.50209333333333,
+        "A_k4_r3@16000": 56.33606666666667
+      },
+      "mean": 57.17390444444444,
+      "band": 1.3474866666666614
+    }
+  },
+  "a_offsets": {
+    "+1": {
+      "mean": 1.0,
+      "band": 0.0
+    },
+    "+2": {
+      "mean": 0.49349333333333334,
+      "band": 0.019529999999999992
+    },
+    "+3": {
+      "mean": 0.26822666666666667,
+      "band": 0.015619999999999967
+    },
+    "+4": {
+      "mean": 0.16927333333333336,
+      "band": 0.007819999999999994
+    }
+  },
+  "a3_effects": [
+    {
+      "arm": "B_k6@16000",
+      "mean_accepted_prefix": {
+        "value": 1.03689,
+        "effect": 0.025873333333333415,
+        "exceeds_band": false
+      },
+      "tpf": {
+        "value": 1.43141,
+        "effect": 0.013016666666666676,
+        "exceeds_band": false
+      },
+      "tok_s": {
+        "value": 57.72666,
+        "effect": 0.5527555555555637,
+        "exceeds_band": false
+      }
+    },
+    {
+      "arm": "C_k8@16000",
+      "mean_accepted_prefix": {
+        "value": 0.988,
+        "effect": -0.023016666666666685,
+        "exceeds_band": false
+      },
+      "tpf": {
+        "value": 1.39806,
+        "effect": -0.020333333333333314,
+        "exceeds_band": false
+      },
+      "tok_s": {
+        "value": 56.6992,
+        "effect": -0.47470444444444126,
+        "exceeds_band": false
+      }
+    },
+    {
+      "arm": "C_k8_r2@16000",
+      "mean_accepted_prefix": {
+        "value": 1.08264,
+        "effect": 0.07162333333333337,
+        "exceeds_band": true
+      },
+      "tpf": {
+        "value": 1.44289,
+        "effect": 0.02449666666666661,
+        "exceeds_band": false
+      },
+      "tok_s": {
+        "value": 58.409106666666666,
+        "effect": 1.2352022222222274,
+        "exceeds_band": false
+      }
+    },
+    {
+      "arm": "D_curr@16000",
+      "mean_accepted_prefix": {
+        "value": 1.02834,
+        "effect": 0.017323333333333357,
+        "exceeds_band": false
+      },
+      "tpf": {
+        "value": 1.41454,
+        "effect": -0.0038533333333334863,
+        "exceeds_band": false
+      },
+      "tok_s": {
+        "value": 57.496340000000004,
+        "effect": 0.3224355555555647,
+        "exceeds_band": false
+      }
+    }
+  ],
+  "c_replication": {
+    "mean_accepted_prefix": {
+      "c1_effect": -0.023016666666666685,
+      "c2_effect": 0.07162333333333337,
+      "a_band": 0.05291000000000001,
+      "abs_c1_minus_c2": 0.09464000000000006,
+      "c1_exceeds_band": false,
+      "c2_exceeds_band": true,
+      "conditions": {
+        "1": false,
+        "2": true,
+        "3": true,
+        "4": false,
+        "5": true
+      },
+      "headline_case": 5,
+      "statements": [
+        "C_k8 is highly launch-sensitive under this training setup; no stable positive horizon-training effect is established.",
+        "The C_k8 effect is launch-sensitive; the original frozen U5 result may be real but is not robust to an independent C training launch.",
+        "The assumption that A_k4 launch spread is representative of C_k8 training variability is not supported by this check."
+      ],
+      "notes": []
+    },
+    "tpf": {
+      "c1_effect": -0.020333333333333314,
+      "c2_effect": 0.02449666666666661,
+      "a_band": 0.03361999999999998,
+      "abs_c1_minus_c2": 0.044829999999999925,
+      "c1_exceeds_band": false,
+      "c2_exceeds_band": false,
+      "conditions": {
+        "1": false,
+        "2": false,
+        "3": true,
+        "4": true,
+        "5": true
+      },
+      "headline_case": 5,
+      "statements": [
+        "C_k8 is highly launch-sensitive under this training setup; no stable positive horizon-training effect is established.",
+        "The assumption that A_k4 launch spread is representative of C_k8 training variability is not supported by this check.",
+        "Independent C_k8 replication provides no evidence that the U4/U5 effect exceeds measured launch-to-launch training noise."
+      ],
+      "notes": []
+    },
+    "tok_s": {
+      "c1_effect": -0.47470444444444126,
+      "c2_effect": 1.2352022222222274,
+      "a_band": 1.3474866666666614,
+      "abs_c1_minus_c2": 1.7099066666666687,
+      "c1_exceeds_band": false,
+      "c2_exceeds_band": false,
+      "conditions": {
+        "1": false,
+        "2": false,
+        "3": true,
+        "4": true,
+        "5": true
+      },
+      "headline_case": 5,
+      "statements": [
+        "C_k8 is highly launch-sensitive under this training setup; no stable positive horizon-training effect is established.",
+        "The assumption that A_k4 launch spread is representative of C_k8 training variability is not supported by this check.",
+        "Independent C_k8 replication provides no evidence that the U4/U5 effect exceeds measured launch-to-launch training noise."
+      ],
+      "notes": []
+    }
+  },
+  "headline_case": 5,
+  "headline_statements": [
+    "C_k8 is highly launch-sensitive under this training setup; no stable positive horizon-training effect is established.",
+    "The C_k8 effect is launch-sensitive; the original frozen U5 result may be real but is not robust to an independent C training launch.",
+    "The assumption that A_k4 launch spread is representative of C_k8 training variability is not supported by this check."
+  ],
+  "mechanism_profiles": {
+    "C1": {
+      "label": "first_slot_only",
+      "moving_offsets": [
+        "+2"
+      ],
+      "deltas": {
+        "+2": 0.026036666666666708,
+        "+3": -0.002606666666666646,
+        "+4": 0.01041666666666663
+      }
+    },
+    "C2": {
+      "label": "none",
+      "moving_offsets": [],
+      "deltas": {
+        "+2": 0.01041666666666663,
+        "+3": -0.002606666666666646,
+        "+4": 0.01041666666666663
+      }
+    }
+  },
+  "replication_outcome": {
+    "code": "neither",
+    "performance_replicates": false,
+    "profile_replicates": false,
+    "text": "Neither performance nor the mechanism profile replicates (first_slot_only vs none)."
+  },
+  "valid_replicate": true,
+  "degeneracy": {
+    "a_launches_identical": false,
+    "c_launches_identical": false
+  },
+  "notes": [],
+  "limits": "Two C_k8 launches do not establish C's standard deviation, a confidence interval across training launches, heteroskedasticity, or a distribution of K=8 outcomes. This check answers only whether the C effect survives one independent rerun, and whether the difference between the two launches looks roughly compatible with the A_k4 launch spread.",
+  "tok_s_caveat": "u5-eval records each prompt's tok/s as the best of three keyed repeats. Repeats decode identical tokens, so the selection is on timing jitter only, and it applies identically to every arm in this session."
+}

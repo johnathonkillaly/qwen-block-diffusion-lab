@@ -5,8 +5,10 @@ Short enough to read without the journal. Everything here is backed by a run in
 revision and seeds. Longer narrative: [docs/ACT3_JOURNAL.md](docs/ACT3_JOURNAL.md)
 and [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
 
-Model throughout: **Qwen3.5** (0.8B in Act I, 4B-Base in Acts II–III), BF16, LoRA,
-Apple Silicon.
+Model throughout: **Qwen3.5** (0.8B in Act I, 4B-Base from Act II on), BF16, LoRA,
+Apple Silicon. From Act IV-S on, raw results are committed under `results/`. The map of
+every stage, report, dataset and checkpoint is [docs/RESULTS_INDEX.md](docs/RESULTS_INDEX.md);
+the short story is [docs/PROJECT_SUMMARY_THROUGH_U5.md](docs/PROJECT_SUMMARY_THROUGH_U5.md).
 
 ---
 
@@ -75,6 +77,12 @@ with 100% token equality at K=1,2,4 — with a *trained or an untrained* adapter
 the verifier guarantees it. Worth stating precisely because it is the claim most easily
 mistaken for a result: it is a property of the algorithm, costs nothing, and is not
 evidence that the method works.
+*Qualified 2026-09-14:* "exactly lossless" held in the cacheless reference regime on the
+prompts Act IV-U checked. Measured more widely it is exact **up to bf16 ties**. Act IV-S
+audited 759 cached-regime divergences from native greedy output, all within one bf16 ULP
+of a tie, and Act IV-U5 found 2 of 15 prompts diverging at ties in the cacheless regime too.
+The verifier commits exactly the target's own argmax for the forward width it runs (see
+*speculative greedy output equals native greedy output except at bf16 ties*, below).
 
 **The adapter learns a real, control-separated part of the AR trajectory.** Held-out
 agreement at future slot +1 rose from 6.3% (untrained) to 39.1% at K=2, while a
@@ -84,7 +92,8 @@ over untrained at every block size. See [docs/act4u_results.md](docs/act4u_resul
 **The replay forward was the whole bottleneck, and it can be removed.** Act IV-U2
 unrolls the Gated DeltaNet recurrence *inside the existing verify forward* so per-token
 state is captured, making a prefix commit a state selection rather than a model pass.
-With **no retraining, the same adapter and byte-identical output**, tokens-per-forward
+With **no retraining, the same adapter and output token-identical to the replay decoder's**,
+tokens-per-forward
 went 0.862 -> **1.279** at K=4 and wall clock 0.79x -> **1.03x** AR (1.09x at K=2).
 Act IV-U's counterfactual prediction of 1.20-1.28 was accurate.
 See [docs/act4u2_results.md](docs/act4u2_results.md).
@@ -149,6 +158,11 @@ training had left both flat. Paired, same session, same noise stream. Not
 pre-registered and measured once, so it is a hypothesis rather than a result -- but it
 separates "best block size to train at" from "best block size to decode at", which
 Act IV-U4 had assumed were one question.
+*Qualified 2026-09-14:* Act IV-U5 tested this with a matched control and replicate
+launches and did not support it. The ~7 sd compared two separate training launches
+against evaluation noise alone, and launch-to-launch spread is larger (see *training is
+not reproducible across launches*, below, and
+[docs/act4u5_results.md](docs/act4u5_results.md)).
 
 **The official Uno curriculum's intermediate stage does real work.** Going 4 -> 6 -> 8
 beat going 4 -> 8 directly on every aggregate at equal step count: held-out TV 1.3046
@@ -157,6 +171,10 @@ arm's long offsets did not move at all. Confirmed from
 `ifm-ai/uno@training/configs/uno_3epoch_curriculum.yaml` that IFM run six equal-token
 stages `2,4,6,8,12,16`, and from `training/trainer.py` that a stage transition changes
 only the block size -- optimizer, adapter and LR schedule all carry over.
+*Qualified 2026-09-14:* the two arms were single training launches, and their 0.044
+prefix difference is inside the launch-to-launch spread Act IV-U5 measured at K=8
+(0.095). That the intermediate stage helps is not established. The reading of IFM's
+source stands.
 
 **Draftability does not become more predictive further out.** Pre-registered as a
 hypothesis and refuted: mean `|r(gap, acceptance)|` is 0.068 at offsets +6..+8 against
@@ -181,6 +199,42 @@ shifted every later training noise draw: two runs with identical seeds, data and
 hyperparameters diverged in **all 256** adapter tensors. It was caught only because a
 pre-registered gate compared the re-run against the archived checkpoint. Evaluation now
 uses an explicit PRNG key.
+
+**A frozen diffusion drafter gives a real end-to-end speedup at K=4, and K=4 is where every
+slot still pays (Act IV-S).** Setup: adapter `runs/u4b1/step-16000` on frozen
+Qwen3.5-4B-Base (bf16, MLX, M4 Max), greedy decoding, 27 prompts in 9 categories, 128
+generated tokens, 3 repeats, arms interleaved. Result: **K=4 60.32 tok/s against native AR
+48.46 = 1.245×**, and 1.230× on the loop-free subset. Two later sessions reproduced 1.248×
+and 1.238×.
+
+Other widths: K=2 1.129×, K=8 1.128×, K=16 0.528×. The prefix-survival curve does not
+depend on decode width (about 0.60 at one slot, halving each slot), so three speculative
+slots pay and a fourth does not. The K=1 control, with no speculative slot at all, runs at
+0.814× AR: that is the cost of the draft→verify cycle itself. See
+[docs/RESULTS_SPECULATIVE.md](docs/RESULTS_SPECULATIVE.md).
+
+**Speculative greedy output equals native greedy output except at bf16 ties.** Across Act
+IV-S, 759 positions diverged from native AR. Every one was within one bf16 ULP of a tie
+(492 exact ties, 0 beyond one ULP). 1.24% of decoded positions carry an exact top-2 tie,
+where a width-1 AR forward and a width-(K+1) verify forward break it differently and
+neither is wrong. True byte-identity needs a width-invariant target argmax (fp32 logits,
+or tie-breaking by token id), not a decoder change.
+
+**On MLX/Metal, training is not reproducible across launches, and the spread is larger
+than the thresholds it was compared against.** Act IV-U5 launched one K=4 continuation
+three times and one K=8 continuation twice, identical in start checkpoint, arguments,
+seed, data position, code and environment, all proven from artifacts
+(`results/act4u5/u5_replicate_provenance.json`). Loss matches at the first step and
+diverges from the second, and every finished adapter differs.
+
+* K=4 mean accepted prefix: 1.028 / 1.029 / 0.976, a spread of 0.053. That is 2× U5's
+  preregistered floor of 0.0254; the TPF spread is 5× its floor.
+* K=8: 0.988 vs 1.083.
+
+A fixed adapter evaluates bit-identically across sessions, so this is training variance.
+**Any comparison between two separately trained adapters is one draw from this spread.**
+It qualifies two Act IV-U4 claims above, and it means every future arm comparison needs
+replicate launches.
 
 ## Negative results
 
@@ -225,6 +279,53 @@ clearly collapsing. Near-zero entropy often means the next token is fixed by the
 noise-filled draft row cannot see. An argument against naive entropy-routed dynamic
 block sizing, which the block-level correlation (r = −0.15 to −0.28) alone would have
 hidden.
+
+**Adaptive K does not beat fixed K=4 (Act IV-S, gate 5).** Entropy-threshold, survival and
+expected-value schedulers, with scheduler cost charged to the wall clock: the best adaptive
+policy reached 1.230× AR against fixed K=4's 1.238× (1.213× vs 1.215× on loop-free text).
+* The entropy policy won tokens-per-forward (1.542, best of any arm) and converted none of
+  it into wall-clock speed.
+* The survival policy collapsed to a constant K=2, which is a defect in its rule.
+* The drafter's own top-1 probability does predict prefix survival (a 7.5× spread across
+  deciles). But it exists only after the draft forward, too late to choose that forward's
+  width.
+
+**More denoising improves the draft and destroys the decoder (Act IV-S).** Four refinement
+passes raise mean accepted prefix from 1.069 to 2.784, and per-slot acceptance to 0.938.
+They also drop throughput to 0.776× AR, because every pass is a full forward. Wider blocks
+show the same dissociation: K=16 has the highest tokens-per-forward (1.580) and is the
+slowest decoder (0.528×).
+
+**Greedy base-model output loops, and loops flatter every drafting metric (Act IV-S).** The
+mean 8-gram loop fraction is 0.18 at 128 tokens and 0.50 at 512, and it correlates with
+acceptance at r ≈ +0.5. Three apparent results were artifacts of it:
+* "speedup grows with generation length";
+* "high-entropy prompts draft best";
+* "a prompt-lookup n-gram drafter matches diffusion": 1.199× vs 1.248× pooled, but 1.077×
+  vs 1.234× on loop-free text.
+
+**Long context does not help speculative decoding on this hybrid backbone (Act IV-S).** K=4
+decode-only speedup falls from 1.444× at 512 tokens of context to 1.118× at 16K. 24 of 32
+layers keep constant-size recurrent state, so native decoding barely slows with context
+(−11% over a 32× increase). The width-(K+1) verify pass grows in the attention layers.
+
+**Training at a longer horizon does not make a better short-horizon drafter here
+(Act IV-U5).** Four arms (K=4 control, K=6, K=8, curriculum 4→6→8) started from one
+byte-identical checkpoint, trained 3200 matched steps each (1.26–1.27 h), and all
+decoded at K=4, paired against the matched control on 15 prompts. Accepted-prefix change
+vs control:
+
+* B_k6: +0.009 [−0.108, +0.101]
+* C_k8: −0.040 [−0.155, +0.071]
+* D_curr: +0.000
+
+No arm cleared a gate at any of five checkpoints: U5-1, U5-3 and U5-4 fail, and U5-5 fails by the letter on C_k8's
+shortfall. The matched K=4 control itself gained +0.060 over the start, two thirds of
+the U4 effect that motivated the experiment. An identical relaunch of C_k8 landed on
+the other side of the control (+0.072 against the original's −0.023). Verdict
+`U4 OBSERVATION WAS NOISE`. With 15 prompts the paired intervals are about ±0.10
+prefix, so a true effect smaller than that is not excluded. See
+[docs/act4u5_results.md](docs/act4u5_results.md).
 
 **One-batch overfit saturates at 4B and cannot rank mechanisms.** At 0.8B it
 discriminated; at 4B both the causal and bidirectional configs hit loss ~1e-4 and 100%
@@ -307,11 +408,13 @@ Worth doing now that a healthy baseline exists:
 
 For the Act IV-U (Uno) track, after U4:
 
-6. **Does training at K=8 and decoding at K=4 beat training at K=4?** U4 found this on
-   one unplanned comparison. It needs its own arm and the obvious control (3200 more
-   K=4 steps from step-12800, which U4-A's plateau predicts will do nothing).
+6. ~~**Does training at K=8 and decoding at K=4 beat training at K=4?**~~ **Answered by
+   Act IV-U5: no transfer found**, within that experiment's power (±0.10 prefix).
 7. **The official curriculum from the start** (`2 -> 4 -> 6 -> 8`) rather than bolted
    on after 12,800 fixed-K=4 steps.
-8. **Dynamic-K routing (U5)**, now properly informed: best K is 4, K=4 training
-   saturates, and the per-slot economics are measured. The survival curve says a router
-   would have to predict, per cycle, whether *slot 3* will be accepted.
+8. ~~**Dynamic-K routing**~~ **Tested in Act IV-S: adaptive K failed its gate**
+   ([docs/RESULTS_SPECULATIVE.md](docs/RESULTS_SPECULATIVE.md)).
+9. **Replicated training comparisons.** Any future training-recipe question needs at
+   least three launches per arm and more than 15 evaluation prompts. U5's paired
+   intervals (±0.10 prefix) and launch spread (0.05–0.10) are both larger than every
+   training effect Act IV-U has chased.

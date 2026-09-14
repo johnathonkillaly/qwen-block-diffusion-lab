@@ -14,8 +14,9 @@ Four things worth knowing before you touch anything:
    is the Uno diffusion-distillation track (`src/qdif/uno/`, `scripts/uno.py`,
    `docs/act4u*_*.md`), which is the active one. It has five phases: `U` (Uno
    reproduction), `U2` (transactional recurrent verification), `U3` (acceptance
-   scaling), `U4` (horizon scaling) and `U5` (training-horizon transfer — prepared,
-   not run; heavy execution is gated by `src/qdif/uno/resource_guard.py`). They share no code with Act IV-N. `RPRM`
+   scaling), `U4` (horizon scaling) and `U5` (training-horizon transfer — complete, verdict
+   `U4 OBSERVATION WAS NOISE`). `Act IV-S` evaluated the speculative decoder itself (K=4,
+   about 1.23–1.25× native AR, greedy, exact up to bf16 ties). They share no code with Act IV-N. `RPRM`
    (`RPRM_DIFFUSION_*.md` at repo root, `scripts/rprm_stage1_*.py`) is a third,
    completed, unrelated track: a denoiser-uncertainty early-exit test run on top of
    the frozen Act IV-U4 checkpoints. **Verdict: STOP** — do not reopen it, move its

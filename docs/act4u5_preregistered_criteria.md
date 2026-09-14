@@ -233,4 +233,231 @@ Not: "longer diffusion training always improves short decoding."
 
 ## 11. Amendments
 
-*(none)*
+### A1 — 2026-09-13: training is not reproducible across launches
+
+**Written during the primary run, before any U5 checkpoint was evaluated.** No U5
+result exists at the time of writing. No threshold, gate or verdict rule in §0–§10 is
+changed by this amendment.
+
+**Observation.** Arm `A_k4` was launched twice from the identical start
+(`runs/u4a/step-12800`), with identical arguments, seed and restored data position. The
+first launch was killed at step 13090 by an unrelated restart of the controlling
+session, before its first checkpoint (13200), so it wrote no adapter and contributes no
+data. Its log is kept: `runs/u5-launch.attempt1-killed-at-13090.log`. The two logs
+overlap for five logged steps:
+
+| step | loss (launch 1) | loss (launch 2) | \|g\| (launch 1) | \|g\| (launch 2) |
+|---|---|---|---|---|
+| 12800 | 0.2775 | 0.2775 | 12.359 | 12.351 |
+| 12810 | 0.4221 | 0.4168 | 8.470 | 8.098 |
+| 12820 | 0.7120 | 0.7129 | 8.021 | 7.761 |
+| 12830 | 0.6479 | 0.6475 | 7.732 | 7.782 |
+| 12840 | 0.2433 | 0.2450 | 3.991 | 4.164 |
+
+The loss is identical at step 12800, so the starting weights and the first batch match.
+The gradient norm already differs there, and from step 12810 the trajectories diverge:
+max |Δloss| 0.0053, gradient norm up to 4.4% apart within 40 steps.
+
+**Interpretation.** On the 4B backbone under MLX on Metal, two launches of the same
+training run do not follow the same trajectory. The cause is not established: five
+steps are too few, and nondeterministic GPU kernels in the bf16 backward pass are the
+likeliest explanation, not a demonstrated one. This does not contradict earlier
+reproducibility claims. The bit-identical results in Act IV-U3/U4 concerned
+*evaluation* (forward passes only). The bitwise-resume requirement in U5-0 is scored by
+`tests/test_uno_resume.py`, which this amendment does not touch, and which does not
+cover the 4B backbone across separate launches.
+
+**Consequence.** The floors in §2 and §3 are the spread of *evaluations* of one frozen
+adapter. They contain no training-trajectory variance. A U5 difference between an arm
+and the control is therefore the horizon effect **plus** launch-to-launch training
+noise, and the frozen floors cannot tell these apart. An arm can clear every §3
+condition on training noise alone.
+
+### A2 — 2026-09-13: replicate launches of the control
+
+Added as a control, not as a change to the protocol.
+
+* The primary run (`scripts/u5_launch.sh`) proceeds **unmodified**, and U5-0…U5-5 and
+  §9 are scored exactly as frozen.
+* After it completes, `scripts/u5_replicates.sh` trains two more launches of `A_k4`
+  (`A_k4_r2`, `A_k4_r3`) with byte-identical arguments to the primary `A_k4`, including
+  the checkpoint schedule, because U3-0b showed that schedule changes can perturb
+  training.
+* All three `A_k4` launches and the `B_k6`, `C_k8`, `D_curr` endpoints are then evaluated
+  in **one supplementary paired session** at `K_decode = 4`
+  (`runs/u5/eval_replicates.json`). This is required, not a convenience: between-session
+  evaluation noise (±4%) would otherwise swamp the quantity being measured.
+* The replicate adapters are compared by tensor digest
+  (`results/act4u5/u5_replicate_check.json`). If all three are identical, A1's
+  observation did not generalise to a full run, and that is reported.
+
+### A3 — 2026-09-13: how the replicates are read, fixed before they exist
+
+For each of mean accepted prefix, TPF and tok/s at `K_decode = 4`, measured in the
+supplementary session:
+
+```
+training-noise band  =  max − min across the three A_k4 launches
+arm effect           =  arm − mean(three A_k4 launches)
+```
+
+A range is used rather than an sd because an sd from three launches is too poorly
+estimated to be worth its apparent precision.
+
+For every arm that passes U5-1, U5-3 or U5-4 **as frozen**:
+
+* arm effect **> band** → reported as *passes, and exceeds measured training noise*;
+* arm effect **≤ band** → reported as *passes the frozen criterion but is not
+  distinguishable from launch-to-launch training noise*.
+
+The §9 verdict is still chosen from the frozen list. If every passing arm falls in the
+second case, the verdict line must carry that qualification in the same sentence.
+`U4 OBSERVATION WAS NOISE` stays available, and this is exactly the case where it
+should be considered.
+
+**Stated limitation.** The band measures the control's training noise only. Reading it
+as the noise of the longer-horizon arms assumes their training noise is similar. That is
+plausible, since every arm uses the same optimizer, data and step count, but it is not
+measured. Replicating `C_k8` would test it and is not scheduled.
+
+### A4 — 2026-09-13: supplementary C_k8 launch-sensitivity check
+
+**Written before any U5 endpoint was evaluated.** When this was written, the primary run
+was still training its first arm (`A_k4`), and no U5 evaluation of any kind had run.
+
+What this amendment does **not** do comes first:
+
+* It does not modify U5-0 through U5-5, the §3 floors, or any threshold.
+* It does not modify §9 verdict selection.
+* It does not replace the original `C_k8`. The original `C_k8`, evaluated in the primary
+  sessions, is the only C arm used to score the frozen gates.
+* It does not permit averaging the C launches, choosing the better one, or feeding either
+  replicate into U5-1, U5-3 or U5-4.
+* It is a supplementary robustness check only. Its result may qualify the interpretation;
+  it cannot change the scorecard.
+
+**Rationale.** A3 estimates training noise from three launches of `A_k4` and applies that
+band to `B_k6`, `C_k8` and `D_curr`. That assumes their launch-to-launch variability is
+comparable to the control's, which A3 itself records as plausible but unmeasured.
+`C_k8` is the arm closest to U4's unplanned K=8-training → K=4-decoding observation, so
+it is where launch sensitivity matters most. One independent launch, `C_k8_r2`, tests
+whether the C effect is visibly launch-sensitive. **Two C launches cannot estimate C's
+variance**, and nothing here describes them as doing so. This supersedes A3's "not
+scheduled" sentence; A3 is otherwise unchanged.
+
+**Identity.** `C_k8_r2` resumes from the same start (`runs/u4a/step-12800`) with the same
+arguments as the primary `C_k8` invocation in `u5_launch.sh`: horizon K=8, 16000 steps,
+learning rate, optimizer, corruption, noise alignment, checkpoint schedule, seed, data,
+code, environment and resource guard. Only the output directory differs. The only
+intended difference is the launch-to-launch nondeterminism MLX/Metal already shows (A1).
+The launches are not forced to differ. Provenance, recorded by
+`scripts/u5_replicates.sh` and checked by `scripts/u5_replicate_provenance.py` into
+`results/act4u5/u5_replicate_provenance.json`:
+
+* the start checkpoint immediately before each replicate launch: step, data position,
+  config hash, and adapter and optimizer file and tensor digests, compared with the
+  record the primary run wrote at its own launch. That record is preserved as
+  `results/act4u5/u5_start_check.at_primary_launch.json`, a byte-identical copy made
+  during the primary run, because `u5_launch.sh` rewrites `u5_start_check.json` after
+  training;
+* the primary `C_k8` command line, captured read-only from the process table while it
+  runs, compared token for token with the replicate's, excluding `--out`;
+* digests of the training code and the Python/MLX environment at orchestrator start, at
+  primary exit, and before each replicate launch;
+* at step 16000: config hash, seed, block size, step, data position and RNG state, all of
+  which must match; adapter and optimizer digests, reported as identical or diverged.
+
+A replicate that fails any identity check is reported as **not a valid replicate** and
+is not interpreted.
+
+**Scheduling.** Supplementary phase only: `A_k4_r2`, `A_k4_r3`, then `C_k8_r2`. They start
+after `u5_launch.sh` has exited, and only if all four primary arms and both primary
+evaluations exist. `u5_launch.sh` is not modified. Nothing the primary run still executes
+(`scripts/uno.py`, `u5_start_check.py`, `u5_report.py`, `src/qdif/uno/`) is modified
+while it runs, which is why the supplementary analysis is a new script,
+`scripts/u5_replicate_report.py`.
+
+**Evaluation.** A2's supplementary session is extended to seven endpoints, all at step
+16000 and `K_decode = 4`, in one `u5-eval` invocation with the same prompts, held-out
+rows, draft-noise streams, evaluator and session: `A_k4`, `A_k4_r2`, `A_k4_r3`, `B_k6`,
+`C_k8`, `C_k8_r2`, `D_curr`. `C1` below is the original `C_k8` **as re-evaluated in this
+session**, not its primary-session number, so C1 and C2 are compared without
+between-session noise.
+
+A known harness property, not changed: `u5-eval` records each prompt's tok/s as the best
+of three repeats. Repeats are keyed and decode identical tokens, so this selects on
+timing jitter only (0.05–0.22 tok/s in U4), and it applies identically to every arm in
+the session.
+
+**Definitions.** All metrics are at `K_decode = 4` in the supplementary session:
+free-running mean accepted prefix (`mean_accepted_specs`, U5-1's metric and the
+**principal** metric), TPF (`tokens_per_forward`), tok/s (mean over prompts of per-prompt
+tok/s, as U5-4 scores it), and teacher-forced agreement at offsets `+2`, `+3` and `+4`.
+
+```
+A_band     = max(A1, A2, A3) − min(A1, A2, A3)
+C1_effect  = C_k8     − mean(A1, A2, A3)
+C2_effect  = C_k8_r2  − mean(A1, A2, A3)
+```
+
+**Interpretation, fixed now.** "Exceeds the band" means strictly greater than `A_band`, in
+the positive direction. On the principal metric each condition is evaluated
+independently:
+
+| case | condition | statement |
+|---|---|---|
+| 1 | C1 and C2 both positive and both exceed `A_band` | *The C_k8 effect replicated across two independent training launches and both exceeded the measured A_k4 launch spread.* |
+| 2 | exactly one of C1, C2 exceeds `A_band` | *The C_k8 effect is launch-sensitive; the original frozen U5 result may be real but is not robust to an independent C training launch.* |
+| 3 | \|C1 − C2\| > `A_band` | *The assumption that A_k4 launch spread is representative of C_k8 training variability is not supported by this check.* |
+| 4 | neither exceeds `A_band` | *Independent C_k8 replication provides no evidence that the U4/U5 effect exceeds measured launch-to-launch training noise.* This materially strengthens `U4 OBSERVATION WAS NOISE`. |
+| 5 | C1 and C2 have opposite signs | *C_k8 is highly launch-sensitive under this training setup; no stable positive horizon-training effect is established.* |
+
+The headline is case 5 if it holds, else case 1, else case 2, else case 4. Case 3 is not a
+headline: it is reported whenever it holds, including alongside case 1. Every other
+condition that holds is reported as well, for example case 2 beneath a case-5 headline.
+Case 1 is strong robustness evidence, not a variance estimate.
+
+TPF and tok/s receive the same classification, reported beside the principal one. If
+the metrics disagree, the disagreement is reported and not resolved in favour of any
+metric.
+
+Two degenerate situations are reported as such. If the three `A_k4` adapters are
+tensor-identical, `A_band` is zero by construction and the classification is
+uninformative. If `C_k8` and `C_k8_r2` are tensor-identical, the check says nothing
+about C launch sensitivity.
+
+**Mechanism profile.** For each C launch, at `+2` (the first speculative slot) and at
+`+3` and `+4` (deeper):
+
+```
+Δ_j = agreement_j(C) − mean over A launches of agreement_j
+```
+
+An offset *moves* if `Δ_j ≥ 0.022` **and** `Δ_j` exceeds the `A_k4` launch band at that
+offset. The 0.022 is U5-2's frozen floor, used here only as a descriptive reference.
+
+A launch is labelled `deep` if `+3` or `+4` moves, `first-slot only` if only `+2`
+moves, and `none` otherwise. The profile *replicates* if both launches get the same
+label and that label is not `none`. "Performance replicates" means case 1 on the
+principal metric. The replication outcome is exactly one of:
+
+* performance and mechanism profile both replicate. The profile is named, and the phrase
+  "deeper-offset profile replicates" is used only when the label is `deep`;
+* performance replicates but the profile does not;
+* the profile replicates but performance does not;
+* neither replicates.
+
+The frozen U5-2 rule is unchanged and is scored from the primary session only.
+
+**Strength of language.** Two C launches do not establish C's standard deviation, a
+confidence interval across training launches, heteroskedasticity, or a distribution of
+K=8 outcomes. The check answers only whether the C effect survives one independent
+rerun, and whether the difference between the two launches looks roughly compatible
+with the A_k4 launch spread.
+
+**Outputs.** `results/act4u5/u5_replicate_check.json`,
+`results/act4u5/u5_replicate_provenance.json`, `runs/u5/eval_replicates.json` (with the
+per-prompt and per-row data the harness records), and
+`results/act4u5/u5_supplementary_robustness.{json,md}`. In the final U5 report these
+appear under **Supplementary training-launch robustness**, separate from the
+preregistered scorecard.

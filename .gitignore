@@ -23,6 +23,8 @@ dist/
 *.ckpt
 checkpoints/
 runs/
+# `runs` is a symlink in secondary worktrees, and `runs/` does not match a symlink.
+/runs
 outputs/
 adapters/
 

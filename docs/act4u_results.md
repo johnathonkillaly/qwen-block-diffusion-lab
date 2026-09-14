@@ -342,3 +342,25 @@ Artifacts, each carrying git SHA, versions, seed and full config:
 `runs/uno-bench/control1_untrained.json`, `runs/uno-k4-true/result.json`,
 `runs/uno-k4-shuffled2/result.json`, `runs/uno-compare/compare_final.json`,
 `runs/uno-bench/trained_k4.json`.
+
+---
+
+## Addendum — 2026-09-14: how far "exactly lossless" reaches
+
+Appended later; the text above is unchanged.
+
+Gate 3's "100% token equality, K=1,2,4" was measured in the cacheless reference regime on
+the Stage 0 decoding prompt, and it holds there. Measured more widely, the guarantee is
+exact **up to bfloat16 ties**, not unconditionally:
+
+* Act IV-S (cached regime, 27 prompts, 128 tokens) audited 759 positions where
+  speculative output differed from native greedy output. Every one was within one bf16
+  ULP of a tie, and none was a decoder defect
+  ([`RESULTS_SPECULATIVE.md`](RESULTS_SPECULATIVE.md) §2).
+* Act IV-U5 repeated the cacheless check on 15 prompts for four adapters. 13 of 15
+  prompts were identical; the other two diverged at an exact tie and at one ULP
+  ([`act4u5_results.md`](act4u5_results.md) §6).
+
+The verifier commits exactly the target's own argmax for the forward width it runs.
+Where the target has no strict preference in bf16, a different forward width can pick
+the other token. Nothing else in this document changes.

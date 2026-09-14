@@ -249,3 +249,11 @@ router, no acceptance-history router, no learned router. No mixed-horizon object
 `L₄ + λL₈` (brief §8) — that adds a second variable before the first question is
 answered. U4 already established K=4 as the best static runtime; U5 asks only how good
 a K=4 drafter training can make.
+
+---
+
+## Addendum — 2026-09-14
+
+U5 has run. Results and verdict (`U4 OBSERVATION WAS NOISE`):
+[`act4u5_results.md`](act4u5_results.md). The design above is unchanged. The amendments
+A1–A4 added during the run are in §11 of the criteria.

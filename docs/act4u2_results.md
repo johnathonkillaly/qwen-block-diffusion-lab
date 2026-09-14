@@ -296,3 +296,16 @@ Artifacts: `runs/uno-bench/u2_transactional.json`,
 `runs/uno-draftability/draftability_k8.json`, `runs/uno-draftability/draftability.json`.
 Tests: `tests/test_uno_transaction.py` (29), plus transaction cases in
 `tests/test_uno_decode.py`. Suite: **358 passed**.
+
+---
+
+## Addendum — 2026-09-14: what "same output" means
+
+Appended later; the text above is unchanged.
+
+"Same output" and "byte-identical model, adapter and output" above mean that the
+transactional decoder emits exactly the tokens the Act IV-U replay decoder emits:
+AR-agreement 0.853 in every mode, and identical token streams across replay, snapshot
+and rewind. It does not mean byte-identity with native AR greedy decoding. That holds only
+up to bf16 ties ([`RESULTS_SPECULATIVE.md`](RESULTS_SPECULATIVE.md) §2). The U2 result is
+unaffected.

@@ -559,3 +559,38 @@ In priority order, and none of it started:
    saturates, and the per-slot economics are measured. The survival curve says a
    router would need to predict, per cycle, whether slot 3 will be accepted — that is
    where the marginal token is.
+
+---
+
+## Addendum — 2026-09-14: what Act IV-U5 changes here
+
+Appended after Act IV-U5. The text above is left exactly as written.
+
+Act IV-U5 measured something U4 could not: the spread between separate training launches
+of an identical run. Launch identity is proven from artifacts
+(`results/act4u5/u5_replicate_provenance.json`).
+
+* Three launches of K=4 training from `runs/u4a/step-12800` finished at K=4 mean accepted
+  prefix 1.0283, 1.0288 and 0.9759, a spread of 0.053.
+* Two identical K=8 launches finished at 0.9880 and 1.0826, a spread of 0.095.
+
+Evaluating a fixed adapter is bit-deterministic across sessions, so this is training
+variance. It affects every comparison here between **separate launches**, and none of
+the comparisons along **one trajectory**.
+
+* **"The result nobody pre-registered"** (B1 +3200 K=8 steps vs step-12800: acceptance
+  +0.030, prefix +0.090, "~7σ") **is not supported.** The σ was evaluation noise only.
+  U5 ran the matched control: a K=4 continuation from the same start moved prefix +0.060
+  by itself, no horizon arm beat it, and the verdict is `U4 OBSERVATION WAS NOISE`
+  ([`act4u5_results.md`](act4u5_results.md)).
+* **B2 vs B1** (curriculum vs direct, K=8 prefix 1.143 vs 1.099) were two single
+  launches. Their 0.044 difference is inside the K=8 launch spread, so "the intermediate
+  K=6 stage helped" is not established.
+* **U4-A's saturation analysis stands.** It compares checkpoints along one continuous
+  run, so launch variance does not enter.
+* **K=8 vs K=4 on wall clock (0.910×) stands.** It compares decode widths on fixed adapters.
+* **U4-B4, "bit-exact lossless at K=2/4/8, cacheless reference regime", passed on six
+  prose and factual prompts.** Act IV-U5 repeated the check on the full 15-prompt suite
+  and found two `structured` prompts diverging at bf16 ties (one exact tie, one at one
+  ULP). The guarantee is exact up to bf16 ties, not unconditionally. The verdict is
+  unaffected.

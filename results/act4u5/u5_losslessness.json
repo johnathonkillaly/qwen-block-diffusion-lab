@@ -1,0 +1,668 @@
+{
+  "gate": "U5-5 clause 1 (cacheless losslessness at K_decode=4, every arm)",
+  "measured": "after the primary run; the frozen launcher omits this measurement",
+  "method": "uno.py stage0 / U4-B4: cacheless AR greedy vs cacheless Uno greedy",
+  "harness": {
+    "step": 16000,
+    "tokens": 48,
+    "block_size": 4,
+    "noise_mode": "deterministic_uniform",
+    "noise_seed": 20260905,
+    "prompts": 15
+  },
+  "backbone_digest": "7cd0f5a9bce55681729d390a530630b6fc8ae8c5e683ca4f417532895759e097",
+  "backbone_unchanged": true,
+  "lossless_every_arm": false,
+  "unexplained_divergences": 0,
+  "seconds": 346.6,
+  "arms": {
+    "A_k4": {
+      "adapter": "runs/u5/A_k4/step-16000/adapter.safetensors",
+      "adapter_tensors": 256,
+      "prompts": 15,
+      "identical": 13,
+      "lossless": false,
+      "divergences_within_one_ulp": 2,
+      "divergences_beyond_one_ulp": 0,
+      "ar_reference_identical_across_arms": true,
+      "mean_cached_ar_agreement": 0.8444,
+      "rows": [
+        {
+          "domain": "prose",
+          "prompt": "The history of the printing press begins in the fifteenth century, when",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2745,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "prose",
+          "prompt": "He looked across the room and",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.127,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "prose",
+          "prompt": "In the years following the war, the city",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.3542,
+          "cached_ar_agreement": 0.4167,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "factual",
+          "prompt": "The capital of France is",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.375,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "factual",
+          "prompt": "Water boils at a temperature of",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.3137,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "factual",
+          "prompt": "The largest planet in the solar system is",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.4444,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "code",
+          "prompt": "def fibonacci(n):\n    if n <= 1:\n        return n\n    return",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2105,
+          "cached_ar_agreement": 0.0417,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "code",
+          "prompt": "import numpy as np\n\ndef normalize(x):\n    \"\"\"Scale x to zero mean and unit variance.\"\"\"\n    return",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.3333,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "code",
+          "prompt": "for i in range(10):\n    print(",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2281,
+          "cached_ar_agreement": 0.3333,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "math",
+          "prompt": "To solve the equation 2x + 5 = 13, we first subtract 5 from both sides, giving",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.4167,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "math",
+          "prompt": "The derivative of x^3 with respect to x is",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2281,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "math",
+          "prompt": "If a triangle has sides of length 3, 4 and 5, then",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.375,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "structured",
+          "prompt": "{\"name\": \"Ada Lovelace\", \"born\": 1815, \"known_for\":",
+          "identical": false,
+          "first_divergence": 42,
+          "acceptance_rate": 0.2941,
+          "cached_ar_agreement": 1.0,
+          "audit": {
+            "ar_token": 1742,
+            "uno_token": 26815,
+            "contested_gap": 0.0,
+            "gap_in_ulps": 0.0,
+            "within_one_ulp": true
+          },
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "structured",
+          "prompt": "| Country | Capital |\n| --- | --- |\n| France | Paris |\n| Japan |",
+          "identical": false,
+          "first_divergence": 42,
+          "acceptance_rate": 0.4762,
+          "cached_ar_agreement": 0.875,
+          "audit": {
+            "ar_token": 184849,
+            "uno_token": 59065,
+            "contested_gap": 0.125,
+            "gap_in_ulps": 1.0,
+            "within_one_ulp": true
+          },
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "structured",
+          "prompt": "Ingredients:\n- 2 cups flour\n- 1 cup sugar\n-",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.375,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        }
+      ]
+    },
+    "B_k6": {
+      "adapter": "runs/u5/B_k6/step-16000/adapter.safetensors",
+      "adapter_tensors": 256,
+      "prompts": 15,
+      "identical": 13,
+      "lossless": false,
+      "divergences_within_one_ulp": 2,
+      "divergences_beyond_one_ulp": 0,
+      "ar_reference_identical_across_arms": true,
+      "mean_cached_ar_agreement": 0.8444,
+      "rows": [
+        {
+          "domain": "prose",
+          "prompt": "The history of the printing press begins in the fifteenth century, when",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2222,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "prose",
+          "prompt": "He looked across the room and",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.1667,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "prose",
+          "prompt": "In the years following the war, the city",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.3542,
+          "cached_ar_agreement": 0.4167,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "factual",
+          "prompt": "The capital of France is",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.4444,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "factual",
+          "prompt": "Water boils at a temperature of",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.4,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "factual",
+          "prompt": "The largest planet in the solar system is",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.4444,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "code",
+          "prompt": "def fibonacci(n):\n    if n <= 1:\n        return n\n    return",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2105,
+          "cached_ar_agreement": 0.0417,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "code",
+          "prompt": "import numpy as np\n\ndef normalize(x):\n    \"\"\"Scale x to zero mean and unit variance.\"\"\"\n    return",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2941,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "code",
+          "prompt": "for i in range(10):\n    print(",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2941,
+          "cached_ar_agreement": 0.3333,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "math",
+          "prompt": "To solve the equation 2x + 5 = 13, we first subtract 5 from both sides, giving",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.5,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "math",
+          "prompt": "The derivative of x^3 with respect to x is",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2778,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "math",
+          "prompt": "If a triangle has sides of length 3, 4 and 5, then",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.3542,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "structured",
+          "prompt": "{\"name\": \"Ada Lovelace\", \"born\": 1815, \"known_for\":",
+          "identical": false,
+          "first_divergence": 42,
+          "acceptance_rate": 0.2941,
+          "cached_ar_agreement": 1.0,
+          "audit": {
+            "ar_token": 1742,
+            "uno_token": 26815,
+            "contested_gap": 0.0,
+            "gap_in_ulps": 0.0,
+            "within_one_ulp": true
+          },
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "structured",
+          "prompt": "| Country | Capital |\n| --- | --- |\n| France | Paris |\n| Japan |",
+          "identical": false,
+          "first_divergence": 42,
+          "acceptance_rate": 0.4444,
+          "cached_ar_agreement": 0.875,
+          "audit": {
+            "ar_token": 184849,
+            "uno_token": 59065,
+            "contested_gap": 0.125,
+            "gap_in_ulps": 1.0,
+            "within_one_ulp": true
+          },
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "structured",
+          "prompt": "Ingredients:\n- 2 cups flour\n- 1 cup sugar\n-",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.3137,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        }
+      ]
+    },
+    "C_k8": {
+      "adapter": "runs/u5/C_k8/step-16000/adapter.safetensors",
+      "adapter_tensors": 256,
+      "prompts": 15,
+      "identical": 13,
+      "lossless": false,
+      "divergences_within_one_ulp": 2,
+      "divergences_beyond_one_ulp": 0,
+      "ar_reference_identical_across_arms": true,
+      "mean_cached_ar_agreement": 0.8444,
+      "rows": [
+        {
+          "domain": "prose",
+          "prompt": "The history of the printing press begins in the fifteenth century, when",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2222,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "prose",
+          "prompt": "He looked across the room and",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.127,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "prose",
+          "prompt": "In the years following the war, the city",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.5,
+          "cached_ar_agreement": 0.4167,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "factual",
+          "prompt": "The capital of France is",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.4444,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "factual",
+          "prompt": "Water boils at a temperature of",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.375,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "factual",
+          "prompt": "The largest planet in the solar system is",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.4444,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "code",
+          "prompt": "def fibonacci(n):\n    if n <= 1:\n        return n\n    return",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2281,
+          "cached_ar_agreement": 0.0417,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "code",
+          "prompt": "import numpy as np\n\ndef normalize(x):\n    \"\"\"Scale x to zero mean and unit variance.\"\"\"\n    return",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2222,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "code",
+          "prompt": "for i in range(10):\n    print(",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2778,
+          "cached_ar_agreement": 0.3333,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "math",
+          "prompt": "To solve the equation 2x + 5 = 13, we first subtract 5 from both sides, giving",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.5476,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "math",
+          "prompt": "The derivative of x^3 with respect to x is",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.3529,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "math",
+          "prompt": "If a triangle has sides of length 3, 4 and 5, then",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.4222,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "structured",
+          "prompt": "{\"name\": \"Ada Lovelace\", \"born\": 1815, \"known_for\":",
+          "identical": false,
+          "first_divergence": 42,
+          "acceptance_rate": 0.3542,
+          "cached_ar_agreement": 1.0,
+          "audit": {
+            "ar_token": 1742,
+            "uno_token": 26815,
+            "contested_gap": 0.0,
+            "gap_in_ulps": 0.0,
+            "within_one_ulp": true
+          },
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "structured",
+          "prompt": "| Country | Capital |\n| --- | --- |\n| France | Paris |\n| Japan |",
+          "identical": false,
+          "first_divergence": 42,
+          "acceptance_rate": 0.4,
+          "cached_ar_agreement": 0.875,
+          "audit": {
+            "ar_token": 184849,
+            "uno_token": 59065,
+            "contested_gap": 0.125,
+            "gap_in_ulps": 1.0,
+            "within_one_ulp": true
+          },
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "structured",
+          "prompt": "Ingredients:\n- 2 cups flour\n- 1 cup sugar\n-",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.375,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        }
+      ]
+    },
+    "D_curr": {
+      "adapter": "runs/u5/D_curr/step-16000/adapter.safetensors",
+      "adapter_tensors": 256,
+      "prompts": 15,
+      "identical": 13,
+      "lossless": false,
+      "divergences_within_one_ulp": 2,
+      "divergences_beyond_one_ulp": 0,
+      "ar_reference_identical_across_arms": true,
+      "mean_cached_ar_agreement": 0.8444,
+      "rows": [
+        {
+          "domain": "prose",
+          "prompt": "The history of the printing press begins in the fifteenth century, when",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2222,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "prose",
+          "prompt": "He looked across the room and",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2105,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "prose",
+          "prompt": "In the years following the war, the city",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.5,
+          "cached_ar_agreement": 0.4167,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "factual",
+          "prompt": "The capital of France is",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.375,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "factual",
+          "prompt": "Water boils at a temperature of",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.4,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "factual",
+          "prompt": "The largest planet in the solar system is",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.5238,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "code",
+          "prompt": "def fibonacci(n):\n    if n <= 1:\n        return n\n    return",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2105,
+          "cached_ar_agreement": 0.0417,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "code",
+          "prompt": "import numpy as np\n\ndef normalize(x):\n    \"\"\"Scale x to zero mean and unit variance.\"\"\"\n    return",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2407,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "code",
+          "prompt": "for i in range(10):\n    print(",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.2778,
+          "cached_ar_agreement": 0.3333,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "math",
+          "prompt": "To solve the equation 2x + 5 = 13, we first subtract 5 from both sides, giving",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.5,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "math",
+          "prompt": "The derivative of x^3 with respect to x is",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.3333,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "math",
+          "prompt": "If a triangle has sides of length 3, 4 and 5, then",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.4444,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "structured",
+          "prompt": "{\"name\": \"Ada Lovelace\", \"born\": 1815, \"known_for\":",
+          "identical": false,
+          "first_divergence": 42,
+          "acceptance_rate": 0.3542,
+          "cached_ar_agreement": 1.0,
+          "audit": {
+            "ar_token": 1742,
+            "uno_token": 26815,
+            "contested_gap": 0.0,
+            "gap_in_ulps": 0.0,
+            "within_one_ulp": true
+          },
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "structured",
+          "prompt": "| Country | Capital |\n| --- | --- |\n| France | Paris |\n| Japan |",
+          "identical": false,
+          "first_divergence": 42,
+          "acceptance_rate": 0.375,
+          "cached_ar_agreement": 0.875,
+          "audit": {
+            "ar_token": 184849,
+            "uno_token": 59065,
+            "contested_gap": 0.125,
+            "gap_in_ulps": 1.0,
+            "within_one_ulp": true
+          },
+          "ar_reference_same_as_first_arm": true
+        },
+        {
+          "domain": "structured",
+          "prompt": "Ingredients:\n- 2 cups flour\n- 1 cup sugar\n-",
+          "identical": true,
+          "first_divergence": null,
+          "acceptance_rate": 0.375,
+          "cached_ar_agreement": 1.0,
+          "ar_reference_same_as_first_arm": true
+        }
+      ]
+    }
+  }
+}

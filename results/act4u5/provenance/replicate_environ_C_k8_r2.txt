@@ -1,0 +1,2 @@
+HF_HOME=/Volumes/SHUTTLE
+PYTHONPATH=/Users/johnathonkillaly/code/diffusion-u5/src

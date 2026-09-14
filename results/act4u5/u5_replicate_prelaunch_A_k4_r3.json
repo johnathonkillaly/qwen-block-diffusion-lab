@@ -1,0 +1,54 @@
+{
+  "shared_start": {
+    "path": "/Users/johnathonkillaly/code/diffusion-u5/runs/u4a/step-12800",
+    "exists": true,
+    "step": 12800,
+    "config_hash": "846fa021a8294cbe6d69a1af31b6445380ea801d88447325beb3f1bd183443a6",
+    "block_size": 4,
+    "seed": 20260903,
+    "data_position": {
+      "train": {
+        "seed": 20260903,
+        "batch_size": 4,
+        "num_windows": 4000,
+        "draws": 12800,
+        "cursor": 3200,
+        "order_digest": 17472
+      },
+      "val": {
+        "seed": 20260904,
+        "batch_size": 4,
+        "num_windows": 64,
+        "draws": 1016,
+        "cursor": 32,
+        "order_digest": 272
+      }
+    },
+    "rng": {
+      "seed": 20260903,
+      "streams": {
+        "train_noise": "0x6968999e92c72a55",
+        "train_corruption_rate": "0xda04fb4075c7d48a",
+        "eval_noise": "0x130e775f61ea0c92",
+        "eval_sampling": "0xb834d8602d137cf2",
+        "data_sampling": "0xd810757008c58a8b",
+        "bench_noise": "0x0ac88c86b1050400"
+      }
+    },
+    "optimizer_tensors": 514,
+    "adapter": {
+      "file_sha256": "8332986b8a411f589f8f05d2a2f067a60ae7d7e34d8c2261ec22a89ac5460750",
+      "bytes": 84966094,
+      "num_tensors": 256,
+      "combined": "35ac2d460b7eeefbbb38e49625d7f5ae9a02a64227e820c4d5f16fd168463858"
+    },
+    "optimizer": {
+      "file_sha256": "e93eabcb67e9ed1202a21ba2265a21161e6b83d7710518dda25dbc16d0a5da7e",
+      "bytes": 169933846,
+      "num_tensors": 514,
+      "combined": "4c52eb200e5890eb161421f5a496becf1b44f9963fe7e4ce555d4ef3be11d3c0"
+    }
+  },
+  "arms": {},
+  "divergence": []
+}
