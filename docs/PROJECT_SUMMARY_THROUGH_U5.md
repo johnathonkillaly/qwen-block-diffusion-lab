@@ -5,8 +5,8 @@ to the close of Act IV-U5. It is short by design. Every number comes from the re
 next to it, and [RESULTS_INDEX.md](RESULTS_INDEX.md) maps each report to its raw data and
 checkpoints.
 
-Research checkpoint: this document was written for the commit that closes Act IV-U5. A
-commit cannot contain its own hash, so the hash is recorded in the next commit (§ Record).
+Research checkpoint: commit `7172917` closes Act IV-U5. It was recorded here in the
+following commit, because a commit cannot contain its own hash (§ Record).
 
 ---
 
@@ -241,5 +241,5 @@ chosen and the evidence behind claims about training recipes.
 |---|---|
 | Branch | `rprm-diffusion-stage1` |
 | Last commit before this checkpoint | `4063e4a` (Act IV-U5 PREP) |
-| Closure commit | recorded in the first Act IV-U6 commit |
+| Closure commit | `7172917` (docs/results: close Act IV-U5 and qualify cross-horizon finding) |
 | Tests at closure (2026-09-14) | 436 passed (`-m "not model"`); 45 passed (MLX model tests) |

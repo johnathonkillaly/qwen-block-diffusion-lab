@@ -266,6 +266,15 @@ def run_arm(model, arm: dict, ids: list[int], tokens: int):
             collect_confidence=arm.get("confidence", False),
         )
         return out, stats, extra
+    if kind == "decoupled":
+        # Act IV-U6. Imported here so Act IV-S arms never touch the new module.
+        from qdif.uno.decoupled import decoupled_greedy_generate
+
+        return decoupled_greedy_generate(
+            model, ids, max_tokens=tokens, draft_width=arm["draft"],
+            verify_width=arm["verify"], staged=arm["staged"],
+            transaction_mode="snapshot", noise_stream_seed=NOISE_STREAM_SEED,
+        )
     if kind == "ngram":
         out, stats = ngram_greedy_generate(
             model, ids, max_tokens=tokens, block_size=arm["k"], order=arm.get("order", 3),
@@ -340,7 +349,7 @@ def interleaved_benchmark(
                         "entropy_per_cycle": [round(e, 5) for e in stats.entropy_per_cycle],
                     }
                 )
-                for field in ("k", "refine", "policy", "order"):
+                for field in ("k", "refine", "policy", "order", "draft", "verify", "staged"):
                     if field in arm:
                         row[field] = arm[field]
                 if keep_traces and extra.get("trace"):
