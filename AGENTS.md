@@ -6,6 +6,9 @@ be able to pick the project up from here without re-deriving the state.
 Keep it current. If you change the layout, the commands, or the experiment plan,
 update this file **in the same commit**.
 
+> **PROJECT STATUS: CLOSED (2026-09-14).** Read §6 first. No further Act IV-U stage is
+> planned. New work needs a new research question, on a new branch or in a new project.
+
 ---
 
 ## 1. What this repository is
@@ -24,6 +27,8 @@ diffusion** model, using LoRA on a mostly-frozen backbone.
 > | **Act IV-U3** | acceptance scaling | `cost_model.py`, `scripts/u3_report.py`, `docs/act4u3_*.md` |
 > | **Act IV-U4** | horizon scaling | `rng.py`, `scripts/u4_report.py`, `docs/act4u4_*.md` |
 > | **Act IV-U5** | training-horizon transfer / *Train Long, Decode Short* | `resource_guard.py`, `scripts/u5_*.{py,sh}`, `docs/act4u5_*.md` |
+> | **Act IV-S** | the speculative decoder, measured end to end | `speculative.py`, `scripts/spec_*.py`, `docs/RESULTS_SPECULATIVE.md` |
+> | **Act IV-U6** | decoupled draft/verify width | `decoupled.py`, `scripts/u6_*.py`, `docs/act4u6_*.md` |
 >
 > Act IV-N was paused at "ready to run Stage 2" and is **untouched**. Act IV-U is a
 > separate track added later at the user's request, reproducing IFM's Uno. They share
@@ -212,6 +217,32 @@ produce spurious collection errors. Run the two groups separately, as above.
 
 ## 6. Where the project is now
 
+> ## PROJECT STATUS: CLOSED (2026-09-14)
+>
+> **Core established result**
+>
+> * Diffusion speculative drafting works on the tested setup: frozen Qwen3.5-4B-Base
+>   (bf16), this repository's research MLX harness (MLX 0.32.1), Apple M4 Max, greedy
+>   decoding, frozen drafter `runs/u4b1/step-16000`.
+> * **K=4 is the measured practical frontier.**
+> * About **1.23–1.26× versus the project's own native research AR path**:
+>   * 1.245× in the Act IV-S K sweep, 1.230× on loop-free text;
+>   * 1.248× and 1.238× in later Act IV-S sessions;
+>   * 1.256× as the Act IV-U6 incumbent.
+> * Differences from native greedy decoding occur only at characterized bf16 tie cases.
+>   Every audited divergence is within one bf16 ULP.
+>
+> **Closed lines:** adaptive K; refinement for speed; longer-horizon training transfer;
+> the U4/U5 curriculum hypothesis; draft/verify decoupling; staged verification.
+>
+> **No U7 is planned.** Future work requires a genuinely new research question and should
+> begin on a new branch or in a new project, not as a quiet extension of Act IV-U.
+>
+> **Release:** tag `diffusion-specdecode-v0.1`, with the canonical adapter as its only
+> asset (SHA-256 `8200c339d3d47363a3920fc4aca58f3535fc8bf75be431e35204f374700a4f42`).
+> Story: [`docs/PROJECT_SUMMARY_THROUGH_U6.md`](docs/PROJECT_SUMMARY_THROUGH_U6.md).
+> Navigation: [`docs/RESULTS_INDEX.md`](docs/RESULTS_INDEX.md).
+
 ### Completed
 
 - **Act I** — denoising plumbing; discovered copy collapse; established that a falling
@@ -225,7 +256,7 @@ produce spurious collection errors. Run the two groups separately, as above.
   WikiText-103) while *improving* AR perplexity. 6/7 criteria → recorded as FAILURE by
   its own definition.
 
-### In progress — Act IV-U: Uno diffusion distillation *(the active track)*
+### Complete — Act IV-U: Uno diffusion distillation
 
 **Hypothesis.** A frozen AR backbone plus a small *token-conditional* LoRA can propose
 blocks of K tokens that the frozen model itself verifies and accepts — preserving
@@ -252,7 +283,7 @@ actually published, tagged confirmed / inferred / our approximation),
 [`docs/act4u_results.md`](docs/act4u_results.md).
 
 **Status: Act IV-U..U6 and Act IV-S complete.** The short story is
-[`docs/PROJECT_SUMMARY_THROUGH_U5.md`](docs/PROJECT_SUMMARY_THROUGH_U5.md). Every stage, report,
+[`docs/PROJECT_SUMMARY_THROUGH_U6.md`](docs/PROJECT_SUMMARY_THROUGH_U6.md). Every stage, report,
 raw-data directory and checkpoint is mapped in [`docs/RESULTS_INDEX.md`](docs/RESULTS_INDEX.md).
 Checkpoint digests are in `results/checkpoint_manifest.json`.
 
@@ -614,7 +645,7 @@ stored one, so a metric added to `aggregate()` later appears in earlier results 
 re-running the GPU. Run the experiments **sequentially** — two at once contend for the
 GPU and every wall-clock number in both is void.
 
-### Act IV-U (Uno) — the active track
+### Act IV-U (Uno)
 
 Everything goes through one runner. Every subcommand writes a JSON artifact under
 `runs/` carrying the git SHA, versions, seed and full config.

@@ -1,8 +1,10 @@
 # Results index
 
+**The project is closed (2026-09-14).** This index is its final map.
+
 Navigation only. Each stage lists its dates, question, verdict, report, where its data
 lives, and the checkpoint it used or produced. Narrative:
-[PROJECT_SUMMARY_THROUGH_U5.md](PROJECT_SUMMARY_THROUGH_U5.md). Claims and caveats:
+[PROJECT_SUMMARY_THROUGH_U6.md](PROJECT_SUMMARY_THROUGH_U6.md). Claims and caveats:
 [../FINDINGS.md](../FINDINGS.md).
 
 **Committed data** lives in `results/` and `plots/`. **Raw run directories** live in
@@ -82,11 +84,11 @@ Full digests: `results/checkpoint_manifest.json`. Base model:
 | `u5_A_k4`, `u5_B_k6`, `u5_C_k8`, `u5_D_curr` | `runs/u5/*/step-16000` | U5 arms | `177f4b0c…`, `ef8a2feb…`, `e38e960e…`, `f0465a5a…` |
 | `u5_A_k4_r2`, `u5_A_k4_r3`, `u5_C_k8_r2` | `runs/u5/*/step-16000` | U5 replicate launches | `5958319a…`, `a55cce21…`, `e2588a5c…` |
 
-**Release strategy.** Each adapter is 85 MB. For a GitHub release:
-1. Attach `adapter.safetensors` for the checkpoints the release needs as release assets.
-   At minimum that is `act4s_u6_drafter`, the one every speed claim uses.
-2. Quote the SHA-256 values from the manifest in the release notes.
-3. Tell users to verify with `shasum -a 256`.
+**Published adapter.** Only `act4s_u6_drafter`, the adapter behind every speed claim, is
+published. It is a GitHub release asset under tag `diffusion-specdecode-v0.1`, as
+`qwen3.5-4b-base-diffusion-drafter-u4b1-step16000.safetensors` (84,966,094 bytes, SHA-256
+`8200c339d3d47363a3920fc4aca58f3535fc8bf75be431e35204f374700a4f42`). Release notes:
+[RELEASE_NOTES_diffusion-specdecode-v0.1.md](RELEASE_NOTES_diffusion-specdecode-v0.1.md).
 
-Weights never go into git history. Optimizer state is only needed to resume training and
-stays local.
+The other checkpoints are listed for provenance only and are not published. Weights never
+go into git history, and optimizer state stays local.

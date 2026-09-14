@@ -311,3 +311,11 @@ $PY scripts/u6_report.py final --floor 1.0   # scoring, verdict, plots (no model
 
 Tests: `tests/test_uno_decoupled.py` (40) and `tests/test_uno_u6_report.py` (16). The
 fast suite runs 492 tests, all passing.
+
+---
+
+## Addendum — 2026-09-14: project closed
+
+The research project closed after this result. The fixed-forward-cost remark in **Next** is
+recorded as an observation only; no follow-up experiment is planned. See
+[`PROJECT_SUMMARY_THROUGH_U6.md`](PROJECT_SUMMARY_THROUGH_U6.md).

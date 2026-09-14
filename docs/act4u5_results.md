@@ -419,3 +419,11 @@ Launch long runs detached, in their own session (see `AGENTS.md`).
 The two analysis scripts also run on the committed copies:
 `--eval results/act4u5/raw/eval_curve.json` for `u5_matched_pairing.py`, and
 `--eval results/act4u5/raw/eval_replicates.json` for `u5_replicate_report.py`.
+
+---
+
+## Addendum — 2026-09-14: after Act IV-U6
+
+The runner-up named in **Next**, decoupling draft width from verify width, was tested in
+Act IV-U6: `VERIFY COST DOMINATES` ([`act4u6_results.md`](act4u6_results.md)). The project
+closed afterwards; nothing in **Next** is planned.

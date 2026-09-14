@@ -1,5 +1,7 @@
 # Findings
 
+**Research closed 2026-09-14.** Nothing below is a plan.
+
 Short enough to read without the journal. Everything here is backed by a run in
 `runs/` with `run_metadata.json` recording the commit, package versions, dataset
 revision and seeds. Longer narrative: [docs/ACT3_JOURNAL.md](docs/ACT3_JOURNAL.md)
@@ -8,7 +10,7 @@ and [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
 Model throughout: **Qwen3.5** (0.8B in Act I, 4B-Base from Act II on), BF16, LoRA,
 Apple Silicon. From Act IV-S on, raw results are committed under `results/`. The map of
 every stage, report, dataset and checkpoint is [docs/RESULTS_INDEX.md](docs/RESULTS_INDEX.md);
-the short story is [docs/PROJECT_SUMMARY_THROUGH_U5.md](docs/PROJECT_SUMMARY_THROUGH_U5.md).
+the short story is [docs/PROJECT_SUMMARY_THROUGH_U6.md](docs/PROJECT_SUMMARY_THROUGH_U6.md).
 
 ---
 
@@ -151,8 +153,9 @@ marginal analysis says why: a draft slot must earn 1.5 ms, and `P(accepted >= 4)
 at any block size tested**, which is exactly a block of four.
 See [docs/act4u4_results.md](docs/act4u4_results.md).
 
-**A longer training block improved *short*-block decoding more than more short-block
-training did.** 3200 steps at K=8 (or K=6 then K=8) raised K=4 free-running acceptance
+**~~A longer training block improved *short*-block decoding more than more short-block
+training did.~~ Not supported: see the Act IV-U5 qualification below.** *(The original
+Act IV-U4 text follows, kept as the record.)* 3200 steps at K=8 (or K=6 then K=8) raised K=4 free-running acceptance
 0.3226 -> 0.3525 (~7 sd) and K=4 TPF 1.4035 -> 1.4314, after 9600 steps of K=4
 training had left both flat. Paired, same session, same noise stream. Not
 pre-registered and measured once, so it is a hypothesis rather than a result -- but it
@@ -164,7 +167,8 @@ against evaluation noise alone, and launch-to-launch spread is larger (see *trai
 not reproducible across launches*, below, and
 [docs/act4u5_results.md](docs/act4u5_results.md)).
 
-**The official Uno curriculum's intermediate stage does real work.** Going 4 -> 6 -> 8
+**~~The official Uno curriculum's intermediate stage does real work.~~ Not established: see
+the qualification below.** *(The original Act IV-U4 text follows, kept as the record.)* Going 4 -> 6 -> 8
 beat going 4 -> 8 directly on every aggregate at equal step count: held-out TV 1.3046
 vs 1.3191, agreement 0.1992 vs 0.1869, mean accepted prefix 1.143 vs 1.099. The direct
 arm's long offsets did not move at all. Confirmed from
@@ -219,6 +223,23 @@ IV-S, 759 positions diverged from native AR. Every one was within one bf16 ULP o
 where a width-1 AR forward and a width-(K+1) verify forward break it differently and
 neither is wrong. True byte-identity needs a width-invariant target argmax (fp32 logits,
 or tie-breaking by token id), not a decoder change.
+
+**Algorithmic metrics are not wall-clock metrics (Acts IV-S, IV-U5, IV-U6).** The project's
+main systems lesson, observed five separate times:
+* acceptance improved without speed;
+* tokens per forward improved without speed (K=16: best TPF 1.580, slowest decoder 0.528×);
+* refinement made predictions much better and decoding slower (0.776× AR);
+* adaptive scheduling was more algorithmically efficient and no faster;
+* staged verification committed more tokens per cycle and still lost (−1.58% to −9.01%).
+
+A verify forward costs about 20.1 ms fixed plus 0.80 ms per token on this stack, so
+anything that adds a forward pays more than its paper metrics suggest.
+
+**Timing needs paired, interleaved comparisons; medians can invent differences.** In Act
+IV-U6's calibration, two *identical* K=4 decoder arms had medians 2.3% apart (56.62 vs
+57.95 tok/s) while their paired mean differed by 0.16% (95% CI −0.42% … +0.76%). Act IV-U4
+had already found a 15-prompt median inflating two effects. Every comparison from Act IV-S
+on interleaves arms within each prompt and decides on paired means.
 
 **On MLX/Metal, training is not reproducible across launches, and the spread is larger
 than the thresholds it was compared against.** Act IV-U5 launched one K=4 continuation
@@ -408,12 +429,21 @@ Three honest qualifications:
   neither tested.
 - Any speed claim against optimised inference. Our sampler is unoptimised research
   Python/MLX; comparing it to GGUF or llama.cpp would be meaningless.
+- Any speculative-decoding result for CUDA, vLLM, other Qwen models, other hardware,
+  sampling-based decoding or long generations.
+- The root cause of training-launch nondeterminism on MLX/Metal.
+- True byte-identity with native greedy decoding. A width-invariant target argmax was
+  never attempted.
 
 ---
 
 ## Open questions
 
-Worth doing now that a healthy baseline exists:
+**Further investigation is intentionally deferred.** The project closed on 2026-09-14.
+The questions below are a record of what it raised, not a plan; pursuing any of them would
+be a new project.
+
+Raised by Acts I–III:
 
 1. **Multi-block training** (FLARE's `K` blocks of `B=4` per sequence) — far more
    diffusion supervision per forward than our single 128-token block.
@@ -441,5 +471,5 @@ For the Act IV-U (Uno) track, after U4:
    intervals (±0.10 prefix) and launch spread (0.05–0.10) are both larger than every
    training effect Act IV-U has chased.
 10. ~~**Decouple draft width from verify width.**~~ **Tested in Act IV-U6:
-    `VERIFY COST DOMINATES`.** The open lever is the fixed ~20 ms cost of a forward on this
-    stack: how much of it is Python and Metal dispatch rather than model compute?
+    `VERIFY COST DOMINATES`.** Recorded observation, not investigated: about 82% of a
+    width-5 verify forward on this stack does not depend on width.

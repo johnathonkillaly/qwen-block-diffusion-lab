@@ -151,5 +151,14 @@
       "optimizer_bytes": 169933846
     }
   ],
-  "release_strategy": "Attach adapter.safetensors for the checkpoints a release needs as GitHub release assets (85 MB each), quote the sha256 values from this manifest in the release notes, and never add weights to git history. Optimizer state is only needed to resume training and stays local. The base model is not redistributed."
+  "release_strategy": "Only the canonical adapter (act4s_u6_drafter) is published, as a GitHub release asset under the tag above. Other checkpoints and all optimizer state stay local; their digests are recorded here for provenance. Weights never go into git history. The base model is not redistributed.",
+  "public_release": {
+    "tag": "diffusion-specdecode-v0.1",
+    "url": "https://github.com/johnathonkillaly/qwen-block-diffusion-lab/releases/tag/diffusion-specdecode-v0.1",
+    "adapter_id": "act4s_u6_drafter",
+    "asset_filename": "qwen3.5-4b-base-diffusion-drafter-u4b1-step16000.safetensors",
+    "sha256": "8200c339d3d47363a3920fc4aca58f3535fc8bf75be431e35204f374700a4f42",
+    "bytes": 84966094,
+    "note": "Only this adapter is published. Other entries are listed for provenance only."
+  }
 }

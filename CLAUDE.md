@@ -6,13 +6,16 @@ current deliberately so the project can be handed back and forth.
 
 Do not duplicate guidance here. If something needs saying, say it in `AGENTS.md`.
 
+**PROJECT STATUS: CLOSED (2026-09-14).** See `AGENTS.md` §6. No further Act IV-U stage
+is planned; new work belongs on a new branch or in a new project.
+
 Four things worth knowing before you touch anything:
 
 0. **There are two different "Act IV"s, plus RPRM, which is neither.** `Act IV-N` is
    the structured-noise alphabet (`configs/act4/`, `mlx_backend/act4*.py`,
    `docs/ACT4_CRITERIA.md` — UPPERCASE), paused at "ready to run Stage 2". `Act IV-U`
    is the Uno diffusion-distillation track (`src/qdif/uno/`, `scripts/uno.py`,
-   `docs/act4u*_*.md`), which is the active one. It has six phases: `U` (Uno
+   `docs/act4u*_*.md`), which is complete, like the rest of the project. It has six phases: `U` (Uno
    reproduction), `U2` (transactional recurrent verification), `U3` (acceptance
    scaling), `U4` (horizon scaling) and `U5` (training-horizon transfer — complete, verdict
    `U4 OBSERVATION WAS NOISE`) and `U6` (decoupled draft/verify width — complete,

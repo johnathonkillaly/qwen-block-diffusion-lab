@@ -481,3 +481,7 @@ comparison is inside launch noise.
 
 G's runner-up, decoupling draft width from verify width, is untouched by U5 and remains
 untested.
+
+*Later on 2026-09-14:* that runner-up was tested in Act IV-U6 and failed. Every staged
+configuration was slower than K=4, with verdict `VERIFY COST DOMINATES`
+([`act4u6_results.md`](act4u6_results.md)). The project then closed.
