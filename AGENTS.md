@@ -6,6 +6,9 @@ be able to pick the project up from here without re-deriving the state.
 Keep it current. If you change the layout, the commands, or the experiment plan,
 update this file **in the same commit**.
 
+> **PROJECT STATUS: CLOSED (2026-09-14).** Read §6 first. No further Act IV-U stage is
+> planned. New work needs a new research question, on a new branch or in a new project.
+
 ---
 
 ## 1. What this repository is
@@ -14,12 +17,22 @@ update this file **in the same commit**.
 whether an autoregressive **Qwen3.5-4B-Base** can be adapted into a **discrete text
 diffusion** model, using LoRA on a mostly-frozen backbone.
 
-`src/qdif/uno/` is a from-source reproduction of IFM's public **Uno**
-(`github.com/ifm-ai/uno`, Apache-2.0): a token-conditional LoRA over a frozen,
-byte-hashed backbone that proposes blocks of tokens which the same frozen weights
-then verify. It exists in this repository as **supporting infrastructure** — it
-produces the adapter checkpoints that the RPRM experiment below analyzes. Its own
-results are not part of this release.
+> ### ⚠️ There are two different "Act IV"s. Do not confuse them.
+>
+> | | | |
+> |---|---|---|
+> | **Act IV-N** | structured **N**oise alphabet | `configs/act4/`, `src/qdif/mlx_backend/act4*.py`, `docs/ACT4_CRITERIA.md` (UPPERCASE) |
+> | **Act IV-U** | **U**no diffusion distillation | `src/qdif/uno/`, `scripts/uno.py`, `docs/act4u_*.md` |
+> | **Act IV-U2** | transactional recurrent verification | `recurrence.py`, `transaction.py`, `docs/act4u2_*.md` |
+> | **Act IV-U3** | acceptance scaling | `cost_model.py`, `scripts/u3_report.py`, `docs/act4u3_*.md` |
+> | **Act IV-U4** | horizon scaling | `rng.py`, `scripts/u4_report.py`, `docs/act4u4_*.md` |
+> | **Act IV-U5** | training-horizon transfer / *Train Long, Decode Short* | `resource_guard.py`, `scripts/u5_*.{py,sh}`, `docs/act4u5_*.md` |
+> | **Act IV-S** | the speculative decoder, measured end to end | `speculative.py`, `scripts/spec_*.py`, `docs/RESULTS_SPECULATIVE.md` |
+> | **Act IV-U6** | decoupled draft/verify width | `decoupled.py`, `scripts/u6_*.py`, `docs/act4u6_*.md` |
+>
+> Act IV-N was paused at "ready to run Stage 2" and is **untouched**. Act IV-U is a
+> separate track added later at the user's request, reproducing IFM's Uno. They share
+> no code. The lowercase/uppercase doc split is the disambiguator.
 
 It is a research notebook, not a product. **Negative results are the main output**,
 and they are kept in deliberately. Aborted runs, a mis-specified success criterion and
@@ -33,8 +46,11 @@ a rejected hypothesis are all recorded rather than cleaned up.
 Concretely, and non-negotiably:
 
 - **Pre-register criteria before running.** Never invent or adjust a threshold after
-  seeing results. `docs/ACT3_CRITERIA.md` and `RPRM_DIFFUSION_PREREG.md` are frozen
-  once committed.
+  seeing results. `docs/ACT3_CRITERIA.md`, `docs/ACT4_CRITERIA.md`,
+  `docs/act4u_preregistered_criteria.md`, `docs/act4u2_preregistered_criteria.md`,
+  `docs/act4u3_preregistered_criteria.md`, `docs/act4u4_preregistered_criteria.md`,
+  `docs/act4u5_preregistered_criteria.md` (dated amendments only, in its §11) and
+  `RPRM_DIFFUSION_PREREG.md` are frozen once committed.
 - **A falling loss is not a result.** Act I had loss fall 5× and accuracy reach 96.9%
   while the model had learned only to echo its input.
 - **A degenerate model cannot rank a mechanism.** Act II compared five arms that had
@@ -42,6 +58,11 @@ Concretely, and non-negotiably:
 - **Every arm of a comparison must differ on exactly one axis.** Act II's controls ran
   at a different mixing gate than the arm they controlled for, which invalidated the
   comparison for a whole phase.
+- **One training launch is one draw.** On MLX/Metal, identical training launches diverge,
+  and by more than the effects Act IV-U chased: Act IV-U5 measured a K=4 accepted-prefix
+  spread of 0.053 across three identical launches and 0.095 across two identical K=8
+  launches, while evaluating a fixed adapter is bit-deterministic. Never compare two
+  separately trained adapters without replicate launches of each.
 
 ---
 
@@ -50,11 +71,11 @@ Concretely, and non-negotiably:
 | | |
 |---|---|
 | Working venv | **`.venv-unsloth`** (Python 3.13.12) — use this one |
-| Other venv | `.venv` — legacy torch path, currently broken (see §4) |
+| Other venv | `.venv` — legacy torch path, currently broken (see §6) |
 | Model checkpoint | `/Volumes/SHUTTLE/hub/models--unsloth--Qwen3.5-4B-Base/...` |
 | **Required env var** | **`export HF_HOME=/Volumes/SHUTTLE`** for anything that loads the model |
 | Backend | MLX (`mlx 0.32.1`, `mlx_lm 0.31.3`), Unsloth Gated-DeltaNet custom VJP active |
-| Hardware | Apple M4 Max, 128 GB unified |
+| Hardware | Apple M4 Max, 128 GB unified. Act IV Stage 2 peaks at ~16.3 GB |
 
 ```bash
 VIRTUAL_ENV=.venv-unsloth uv pip install -e ".[mlx,dev]" unsloth
@@ -72,70 +93,101 @@ src/qdif/
   config.py                  typed YAML config; unknown keys are a hard error
   diffusion/
     corruption.py            v0.1 torch corruption (uniform / mask)
-  mlx_backend/               THE REAL BACKEND — Act II/III experiments
+    noise_alphabet.py        ACT IV: the structured corruption alphabet
+    structured_corruption.py ACT IV: the forward process over that alphabet
+    clustering.py            ACT IV: spherical k-means (cosine)
+    bucket_builder.py        ACT IV: build + analyse the D/E bucket tables
+    resolve.py               ACT IV: config -> alphabet; reverse arm -> fusion
+  mlx_backend/               THE REAL BACKEND — all Act II/III/IV experiments
     build.py                 assemble a run: load -> wrap -> LoRA -> freeze
     model.py                 MLXDiffusionQwen; embed() splits clean vs noise ids
     deltanet.py              bidirectional Gated DeltaNet + fusions + controls
+    noise_embedding.py       ACT IV: E_noise side table, split_embed
     act3.py / act3_trainer.py    Act III objective + trainer
+    act4.py / act4_trainer.py    Act IV metrics + trainer
+    act4_stage0.py           Act IV Stage 0 sanity gate
+    act4_report.py           Act IV Stage 2 scorer (encodes the frozen criteria)
   models/                    v0.1 torch path (legacy, currently broken)
-  uno/                       supporting infra for RPRM — see §1. Independent of
-                             mlx_backend; never wraps the backbone, never makes a
-                             DeltaNet bidirectional, never applies a custom mask.
-    gated_lora.py   token-conditional LoRA + routing context + freezing
-    model.py        UnoModel; ar_logits / draft_logits; backbone byte-fingerprint
-    noise.py        uniform / deterministic / mask draft noise
-    teacher.py      training-batch layout, teacher and student logits
-    losses.py       TV, reverse KL, CE
-    verifier.py     greedy acceptance + a slow sequential reference to check it
-    decode.py       AR baseline and the draft->verify cycle, cached and uncached
-    cache_utils.py  hybrid-cache snapshot/restore (KV offset + DeltaNet state)
-    recurrence.py   DeltaNet forward that records per-token state
-    transaction.py  begin/commit_prefix/rollback; replay|snapshot|rewind
-    cost_model.py   acceptance -> forwards/token -> tok/s
-    rng.py          named, separated PRNG streams keyed on (seed, stream, step)
-    metrics.py      per-slot agreement, entropy buckets
-    trainer.py      training loop, saturation guard, adapter save/load, exact resume
-    data.py         wikitext windows + the held-out prompt suite
-    tiny.py         a small *real* hybrid model for fast tests
+  uno/                       ACT IV-U — see below. Independent of mlx_backend.
+configs/act4/                GENERATED — do not hand-edit (see §5)
+artifacts/buckets/           committed bucket tables + cluster report
 docs/                        research journal and design docs
-runs/                        run outputs (git-ignored) — checkpoints referenced by
-                             RPRM (e.g. `runs/u4b2-k8`, `runs/uno-k4-true`) are
-                             produced with scripts/uno.py and are not included here;
-                             see RPRM_DIFFUSION_STAGE0_AUDIT.md for their exact config
-results/rprm_stage1/         committed RPRM data, plots and summary JSON
-scripts/
-  uno.py                     trains/benchmarks the Uno-style adapter (supporting
-                             infra; see §1)
-  rprm_stage1_extract.py     RPRM: run the adapter, record denoiser entropy per position
-  rprm_stage1_analyze.py     RPRM: models, criteria, plots — runs on the committed
-                             CSVs alone, no model needed
+runs/                        run outputs (git-ignored)
 ```
+
+### `src/qdif/uno/` — Act IV-U
+
+```
+gated_lora.py   token-conditional LoRA + routing context + freezing
+model.py        UnoModel; ar_logits / draft_logits; backbone byte-fingerprint
+noise.py        uniform / deterministic / mask draft noise
+teacher.py      training-batch layout, teacher and student logits
+losses.py       TV (IFM's default), reverse KL, CE
+verifier.py     greedy acceptance + a slow sequential reference to check it
+decode.py       AR baseline and the Uno draft->verify cycle, cached and uncached
+cache_utils.py  hybrid-cache snapshot/restore (KV offset + DeltaNet state)
+recurrence.py   ACT IV-U2: DeltaNet forward that records per-token state
+transaction.py  ACT IV-U2: begin/commit_prefix/rollback; replay|snapshot|rewind
+cost_model.py   ACT IV-U3/U4: acceptance -> forwards/token -> tok/s; v2 adds a
+                measured cycle-overhead term, survival curves and slot economics
+rng.py          ACT IV-U4: named, separated PRNG streams keyed on (seed, stream, step)
+resource_guard.py ACT IV-U5: refuses heavy MLX work while another job owns the Mac
+speculative.py  ACT IV-S: refinement (multi-pass draft), adaptive-K policies
+                (fixed|entropy|survival|ev), and an n-gram prompt-lookup drafter.
+                Purely additive — `decode.py` is untouched, and a test asserts this
+                decoder at fixed K reproduces `uno_greedy_generate` token for token,
+                per-cycle, so Act IV-S and Act IV-U numbers stay comparable.
+metrics.py      per-slot agreement, entropy buckets
+trainer.py      training loop, saturation guard, adapter save/load, exact resume
+data.py         wikitext windows + the held-out prompt suite
+tiny.py         a small *real* hybrid model for fast tests
+```
+
+**Deliberately independent of `mlx_backend/`.** Act IV-U never wraps the backbone,
+never makes a DeltaNet bidirectional and never applies a custom mask — the AR path is
+exercised exactly as pretrained. Sharing code with Acts I–IV-N would risk changing
+runs those Acts own.
 
 ---
 
 ## 4. Tests
 
+> **Set `PYTHONPATH` to this worktree's `src`, always.** The editable install in
+> `.venv-unsloth` points at `diffusion_project/src` (the `public-release` worktree),
+> which does not have `resource_guard.py` or `speculative.py`. Without the override,
+> pytest fails collection on two modules and any script silently imports the *older*
+> `qdif`. This is the single most likely way to waste an hour here.
+
 ```bash
-.venv-unsloth/bin/python -m pytest -q -m "not model"
+cd /Users/johnathonkillaly/code/diffusion-u5
+PYTHONPATH=$PWD/src /Users/johnathonkillaly/code/diffusion_project/.venv-unsloth/bin/python -m pytest -q -m "not model"
 ```
 
 ```bash
-HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python -m pytest -q tests/test_act3.py tests/test_bidirectional_deltanet.py
+HF_HOME=/Volumes/SHUTTLE PYTHONPATH=$PWD/src .../.venv-unsloth/bin/python -m pytest -q tests/test_act3.py tests/test_bidirectional_deltanet.py
 ```
 
 **Current state (run both before and after any change):**
 
 | set | result |
 |---|---|
-| `-m "not model"` (fast; must always pass) | **324 passed** |
-| MLX model tests | **45 passed** |
+| `-m "not model"` (fast; must always pass) | **492 passed**, 40 deselected (2026-09-14) |
+| MLX model tests | **45 passed** (2026-09-14) |
 | torch v0.1 (`test_model_integration.py`) | **19 failed, 9 passed — pre-existing** |
 
-The 19 torch failures are **not yours to fix unless asked**. `transformers` installed
-is newer than the v0.1 path's assumptions; upstream `masking_utils.py` now requires
-`attention_mask` to be a tensor while the v0.1 path passes a dict of per-layer masks
-(`AttributeError: 'dict' object has no attribute 'ndim'`). The MLX path, where every
-real experiment runs, is unaffected.
+**Act IV-N's tests are not in these counts.** That work is in `stash@{0}`, so
+`test_structured_noise_model.py` and its siblings are not in the working tree (this table
+once claimed 423 with them present). Act IV-S added 22 tests
+(`tests/test_uno_speculative.py`), 383 → 405. The Act IV-U5 supplementary rig added 31
+(`tests/test_uno_u5_replicates.py`), 405 → 436. Act IV-U6 added 56
+(`tests/test_uno_decoupled.py`, `tests/test_uno_u6_report.py`), 436 → 492.
+
+The 19 torch failures are **not yours to fix unless asked**. `transformers 5.5.0` is
+installed but `pyproject.toml` declares `>=5.8`; upstream `masking_utils.py` now
+requires `attention_mask` to be a tensor while the v0.1 path passes a dict of
+per-layer masks (`AttributeError: 'dict' object has no attribute 'ndim'`). The MLX
+path, where every real experiment runs, is unaffected. Baseline was measured before
+the Act IV work and is unchanged after it.
 
 Do not run the whole suite in one process on a memory-constrained machine — loading
 the 4B model in both torch and MLX in one session can exhaust unified memory and
@@ -147,6 +199,13 @@ produce spurious collection errors. Run the two groups separately, as above.
 
 - **Configs are the interface.** Everything is driven by a typed YAML config; unknown
   keys raise at load time rather than silently defaulting.
+- **`configs/act4/*.yaml` are generated.** Edit `scripts/make_act4_configs.py` and
+  regenerate. `tests/test_act4_config.py::test_generated_configs_are_up_to_date` fails
+  on hand-edits. This exists because hand-edited near-identical YAML is exactly how
+  the Act II control ended up at a different gate from its arm.
+- **Bucket tables are committed artifacts, not run-time computations.** A designated
+  corruption mode without a `mapping_path` is refused, so two arms can never disagree
+  about what bucket 7 means.
 - **Old configs must keep reproducing old runs.** New behaviour goes behind a new
   config field with a legacy-preserving default. `configs/p3_*.yaml` and
   `configs/act3_main.yaml` are frozen artifacts.
@@ -158,22 +217,355 @@ produce spurious collection errors. Run the two groups separately, as above.
 
 ## 6. Where the project is now
 
+> ## PROJECT STATUS: CLOSED (2026-09-14)
+>
+> **Core established result**
+>
+> * Diffusion speculative drafting works on the tested setup: frozen Qwen3.5-4B-Base
+>   (bf16), this repository's research MLX harness (MLX 0.32.1), Apple M4 Max, greedy
+>   decoding, frozen drafter `runs/u4b1/step-16000`.
+> * **K=4 is the measured practical frontier.**
+> * About **1.23–1.26× versus the project's own native research AR path**:
+>   * 1.245× in the Act IV-S K sweep, 1.230× on loop-free text;
+>   * 1.248× and 1.238× in later Act IV-S sessions;
+>   * 1.256× as the Act IV-U6 incumbent.
+> * Differences from native greedy decoding occur only at characterized bf16 tie cases.
+>   Every audited divergence is within one bf16 ULP.
+>
+> **Closed lines:** adaptive K; refinement for speed; longer-horizon training transfer;
+> the U4/U5 curriculum hypothesis; draft/verify decoupling; staged verification.
+>
+> **No U7 is planned.** Future work requires a genuinely new research question and should
+> begin on a new branch or in a new project, not as a quiet extension of Act IV-U.
+>
+> **Release:** tag `diffusion-specdecode-v0.1`, with the canonical adapter as its only
+> asset (SHA-256 `8200c339d3d47363a3920fc4aca58f3535fc8bf75be431e35204f374700a4f42`).
+> Story: [`docs/PROJECT_SUMMARY_THROUGH_U6.md`](docs/PROJECT_SUMMARY_THROUGH_U6.md).
+> Navigation: [`docs/RESULTS_INDEX.md`](docs/RESULTS_INDEX.md).
+
 ### Completed
 
 - **Act I** — denoising plumbing; discovered copy collapse; established that a falling
   loss proves nothing.
 - **Act II** — shared-weight bidirectional Gated DeltaNet. Rejected by pre-registered
-  criteria. See `docs/BIDIRECTIONAL_DELTANET.md`.
+  criteria. **Re-audited in this session: the rejection does not hold up** — all five
+  arms were degenerate and two controls were mis-constructed. Treat as *untested*, not
+  *refuted*. See `docs/previous_experiment_reconstruction.md` §6–7.
 - **Act III** — FLARE-inspired `L_AR + λ·L_diff` with absorbing-state masking. Produced
   a genuinely healthy denoiser (58.2% masked accuracy at t=0.10 on held-out
   WikiText-103) while *improving* AR perplexity. 6/7 criteria → recorded as FAILURE by
   its own definition.
 
-### Completed — RPRM diffusion, Stage 1: denoiser uncertainty *(STOP)*
+### Complete — Act IV-U: Uno diffusion distillation
 
-A separate, narrowly pre-registered test built **on top of** the Uno-style adapter
-checkpoints in `runs/` (`runs/u4b2-k8` primary, `runs/uno-k4-true` replication) —
-not itself a claim about that adapter's own performance. Asks whether the denoiser's
+**Hypothesis.** A frozen AR backbone plus a small *token-conditional* LoRA can propose
+blocks of K tokens that the frozen model itself verifies and accepts — preserving
+output exactly while cutting sequential decoding steps. This is a from-source
+reproduction of IFM's **Uno** (`github.com/ifm-ai/uno`, released 2026-09-03); the
+training code, runtime and a released adapter are all public, so the objective is
+transcribed rather than guessed.
+
+**Architecture.** Backbone 100% frozen and byte-hashed. Trainable: gated LoRA
+r=16/α=256 on `q,k,v,o` (the 8 full-attention layers) and `gate,up,down` (all 32
+MLPs) = **21,233,664 params, 0.5023%** of the backbone. The adapter contributes
+**only on diffusion-noise rows**; prefill, the seed row, verification and every plain
+AR call run the bare backbone. That gating is the whole method — an always-on adapter
+is not Uno.
+
+**Objective.** IFM's default: total variation between the noisy student's and the
+clean teacher's full-vocabulary distributions, `α=β=0, γ=1`. The teacher is the same
+frozen weights with the adapter off.
+
+Docs: [`docs/act4u_uno_source_notes.md`](docs/act4u_uno_source_notes.md) (what IFM
+actually published, tagged confirmed / inferred / our approximation),
+[`docs/act4u_design.md`](docs/act4u_design.md),
+[`docs/act4u_preregistered_criteria.md`](docs/act4u_preregistered_criteria.md) (frozen),
+[`docs/act4u_results.md`](docs/act4u_results.md).
+
+**Status: Act IV-U..U6 and Act IV-S complete.** The short story is
+[`docs/PROJECT_SUMMARY_THROUGH_U6.md`](docs/PROJECT_SUMMARY_THROUGH_U6.md). Every stage, report,
+raw-data directory and checkpoint is mapped in [`docs/RESULTS_INDEX.md`](docs/RESULTS_INDEX.md).
+Checkpoint digests are in `results/checkpoint_manifest.json`.
+
+### Complete — Act IV-U6: decouple draft width from verify width *(2026-09-14)*
+
+Inference scheduling on the frozen Act IV-S drafter (`runs/u4b1/step-16000`); nothing
+trained. Docs: [`docs/act4u6_design.md`](docs/act4u6_design.md),
+[`docs/act4u6_preregistered_criteria.md`](docs/act4u6_preregistered_criteria.md) (frozen,
+committed before any measurement), [`docs/act4u6_results.md`](docs/act4u6_results.md).
+Code: `src/qdif/uno/decoupled.py`, `scripts/u6_*.py`. Data: `results/act4u6/`,
+`plots/act4u6/`.
+
+**Verdict: `VERIFY COST DOMINATES`.** Every staged arm was slower than coupled K=4, with a
+paired CI entirely below zero: S(6,4) −1.58%, S(8,4) −1.61%, S(6,3) −3.03%, S(8,2) −9.01%.
+The truncate variant was killed before any wall-clock work.
+
+Three things worth not re-deriving:
+
+1. **A verify forward costs 20.1 ms fixed plus 0.80 ms per token on this stack**
+   (`results/act4u6/cost_curve.json`). Splitting verification multiplies the fixed part:
+   verifying 2 twice costs 45.1 ms, verifying 4 once costs 24.5 ms. Width 17 costs 62 ms,
+   a cliff past 13.
+2. **At fixed draft width, staging never changes what is committed.** Per-cycle commits
+   were identical across verify widths on 81/81 units. Staging is only a forward schedule
+   for a coupled K=D decoder's tokens.
+3. **The draft pass is causal, so a wider canvas cannot inform earlier slots.** Slots 1–4
+   differ across widths no more than a noise re-draw makes them differ. Do not revisit
+   truncation without a non-causal drafter.
+
+Measurement lesson: two *identical* incumbent arms had medians 2.3% apart and a paired
+mean 0.16% apart. Use paired means.
+
+### Complete — Act IV-S: finishing the speculative decoder *(2026-09-13)*
+
+Evaluation-only, on frozen checkpoints. Measured the five things Act IV-U never did:
+prompt-class stratification, context scaling, a non-diffusion drafter control, iterative
+refinement, and adaptive K. Docs: [`docs/STATE_RECOVERY.md`](docs/STATE_RECOVERY.md),
+[`docs/SPECULATIVE_DESIGN.md`](docs/SPECULATIVE_DESIGN.md),
+[`docs/RESULTS_SPECULATIVE.md`](docs/RESULTS_SPECULATIVE.md). Code:
+`src/qdif/uno/speculative.py`, `scripts/spec_decode.py`, `spec_audit.py`,
+`spec_report.py`. Data: `results/speculative/`, `plots/speculative/`.
+
+**Verdict: `K=4 STANDS. ADAPTIVE K FAILS. TWO OF THE APPARENT WINS WERE ARTIFACTS.`**
+Best: **K=4, 60.32 tok/s vs 48.46 AR = 1.245×** (clean subset 1.230×), 128 tokens.
+Reproduces U4's `K4 IS THE PRACTICAL FRONTIER` on a new suite and a rebuilt harness.
+
+Five things worth not re-deriving:
+
+1. **Losslessness is exact only up to bfloat16 tie-breaking.** 759 divergences audited
+   across 5 experiments: **all within one bf16 ULP, zero unexplained**. 1.24% of decoded
+   positions carry an exact top-2 tie, where a width-1 AR forward and a width-(K+1)
+   verify forward may legitimately differ. **This refines U4's gate U4-B4**, which
+   tested the *cacheless* regime where both paths share a forward width. Do not "fix"
+   the decoder; fix the target's argmax (fp32 logits, or tie-break by token id).
+2. **Greedy base-model output degenerates, and a loop is trivially draftable.** Mean loop
+   fraction 0.18 at 128 tokens, **0.50 at 512**; r(loop, acceptance) ≈ +0.5. Three
+   apparent results are artifacts of this: "speedup grows with generation length",
+   "`high_entropy` drafts best", and "a list scan matches diffusion". **Always report
+   the clean subset** (`ar_looped_fraction < 0.05`); the harness records it per row.
+3. **The n-gram control is the one that nearly killed the headline.** Prompt-lookup
+   reaches 1.199× against diffusion's 1.248× pooled — but **1.077× vs 1.234× on clean
+   text**. Diffusion matters only against non-degenerate text.
+4. **Refinement improves the draft and destroys the economics.** 4 passes take mean
+   accepted prefix 1.069 → 2.784 and throughput 1.248× → **0.776×**. Acceptance is not
+   speed.
+5. **Long context does not help here, and the reason is architectural.** AR decode-only
+   throughput falls just 11% across a 32× context increase, because 24 of 32 layers are
+   constant-state recurrences — there is nothing to amortise. Meanwhile verify cost
+   grows with width×context (+47% at K=8, 16K). Speedup goes 1.444× → 1.118×.
+   **Report decode-only throughput separately**: at 16K the prefill is 14.2 s against
+   ~3 s of generation and drags every end-to-end ratio toward 1.0.
+
+Gate 5 (adaptive K) **FAILED** as pre-registered. `adapt_entropy` is genuinely adaptive,
+wins TPF (1.542, best of any arm) and ties on wall clock. `adapt_survival` collapsed to a
+constant K=2 — a defect in the policy rule, not evidence about adaptivity.
+
+### Complete — Act IV-U5: *Train Long, Decode Short* *(2026-09-13, read 2026-09-14)*
+
+**Verdict: `U4 OBSERVATION WAS NOISE`.** `NO CROSS-HORIZON TRANSFER` also holds; the
+criteria give no rule for choosing between them. Results:
+[`docs/act4u5_results.md`](docs/act4u5_results.md). Data: `results/act4u5/`, `runs/u5/`.
+
+| gate | result |
+|---|---|
+| U5-0 integrity | PASS |
+| U5-1 transfer exists | **FAIL**: no arm beats the matched control (accepted prefix B +0.009, C −0.040, D +0.000; every interval spans zero) |
+| U5-2 horizon mechanism | not applicable (nothing passed U5-1) |
+| U5-3 TPF / U5-4 tok/s | **FAIL** / **FAIL** |
+| U5-5 no degradation | **FAIL by the letter**: C_k8's prefix is 0.040 below the control, beyond the 0.0254 floor |
+
+Three things worth not re-deriving:
+
+1. **Identical training launches diverge on MLX/Metal, by more than U5's preregistered
+   floors.** K=4 accepted prefix across three identical launches: 1.028 / 1.029 / 0.976.
+   K=8 across two: 0.988 / 1.083. A fixed adapter evaluates bit-identically across
+   sessions, so this is training variance. The C_k8 replicate is A4's case 5 (opposite
+   signs): *no stable positive horizon-training effect is established.*
+2. **The matched K=4 control alone gained +0.060 prefix over the shared start**, two
+   thirds of U4's effect. U4's unregistered observation was continued training plus
+   launch noise.
+3. **Power is limited.** With 15 prompts the paired intervals are about ±0.10 prefix; a
+   true effect smaller than that is not excluded.
+
+Rig notes. The frozen launcher's curve session pairs every checkpoint against the shared
+start, not the matched control. `scripts/u5_matched_pairing.py` re-pairs its recorded
+per-prompt data against `A_k4` at the same step: no arm passes U5-1, U5-3 or U5-4 at
+any of the 15 matched comparisons.
+The launcher also never measures U5-5's cacheless-losslessness clause.
+`scripts/u5_losslessness.py` measured it afterwards: 13 of 15 prompts are bit-identical
+for every arm. Both divergences are in `structured` prompts at token 42, one an exact
+bf16 tie and one at 1 ULP, and they are identical across all four arms, so they come
+from backbone arithmetic, not the adapters. That is the same limit Act IV-S found; U4-B4
+only passed because it checked 6 prose and factual prompts.
+
+**The rest of this section is the pre-run record, kept as written.**
+
+
+U4 produced one observation nobody pre-registered: 3200 steps at K=6/K=8 improved
+**K=4** decoding more than 9600 further K=4 steps did. It had **no matched control** --
+nothing in U4 trained K=4 for those same 3200 steps -- so it is a hypothesis, not a
+result, and must not be cited as one. U5 supplies the control:
+
+```
+A_k4    K_train=4    the control U4 never had
+B_k6    K_train=6
+C_k8    K_train=8    the U4 observation, now controlled
+D_curr  4 -> 6 -> 8  IFM's curriculum shape
+```
+
+All four resume from one byte-identical checkpoint (`runs/u4a/step-12800`), get 3200
+matched steps, and **all decode at K=4** -- the question is not whether K=8 decoding
+improved, it is whether K=8 *training* made a better K=4 drafter.
+
+Everything is built and tested: [`docs/act4u5_design.md`](docs/act4u5_design.md),
+[`docs/act4u5_preregistered_criteria.md`](docs/act4u5_preregistered_criteria.md)
+(frozen; amendments A1–A3 in §11), `scripts/u5_launch.sh`, `scripts/u5_report.py`,
+`scripts/u5_start_check.py`, `scripts/u5_replicates.sh`.
+
+**Launched 2026-09-13, at the user's request** (~8 h). Launch 1 was killed at step 13090
+of arm `A_k4` when the controlling Claude Code session restarted: it was a child of that
+session's shell. It wrote no checkpoint; its log is kept as
+`runs/u5-launch.attempt1-killed-at-13090.log`. Launch 2 runs in its own process session
+under `caffeinate -is` and logs to `runs/u5-launch.log`.
+
+> **Launch long runs detached** (`os.setsid()` / `start_new_session=True`). `nohup` from
+> an agent's shell is not enough: restarting the agent kills the process group.
+
+If it dies partway, re-run `bash scripts/u5_launch.sh`. Completed arms are skipped; a
+partial arm restarts from step 12800, which is correct, since every arm must begin from
+the same state.
+
+**Training is not reproducible across launches (criteria §11 A1).** The two `A_k4`
+launches have identical loss at step 12800 and diverge from 12810 (|Δloss| ≤ 0.0053,
+gradient norm up to 4.4% apart within 40 steps). The frozen §3 floors are evaluation
+noise only, so an arm could pass on training noise alone. U3/U4's reproducibility claims
+were about evaluation and still stand.
+
+`scripts/u5_replicates.sh` (A2, A4) runs detached and waits, read-only, for the primary
+run to finish, capturing each primary arm's command line and environment from the
+process table meanwhile. It then:
+
+* trains `A_k4_r2`, `A_k4_r3` and `C_k8_r2` with byte-identical arguments;
+* proves launch identity (`scripts/u5_replicate_provenance.py` →
+  `results/act4u5/u5_replicate_provenance.json`);
+* evaluates all seven endpoints in **one** paired session (`runs/u5/eval_replicates.json`);
+* writes the separate *Supplementary training-launch robustness* section
+  (`scripts/u5_replicate_report.py` → `results/act4u5/u5_supplementary_robustness.{json,md}`).
+
+Log: `runs/u5-replicates.log`, about 4.5 h after the primary run ends. Criteria §11
+A3–A4 fix how the result is read, before it exists: the frozen gates are scored from the
+primary sessions with the original `C_k8` only, and `C_k8_r2` is never substituted or
+averaged in.
+
+> **While a run is in progress, do not edit any file it will still execute.** For U5 that
+> means `scripts/uno.py`, `u5_start_check.py`, `u5_report.py` and `src/qdif/uno/`. **Never
+> edit a running bash script in place:** bash reads scripts from disk as it goes, so an
+> edit shifts the bytes it executes next. Stop that script by its own process group,
+> then edit and relaunch it.
+
+**Act IV-S makes U5 the clear next move.** Act IV-S measured the horizon-survival curve
+at K = 2/4/8/16 and found it **independent of decode-time K** (P(accept ≥ 1) ≈ 0.60 at
+every K, halving each slot). The drafter's reach is therefore a property of the adapter,
+not of how many slots it is offered — so the only remaining lever is what the adapter was
+*trained* against, which is exactly U5's question.
+
+Two things U5 fixed that would have made the arms incomparable:
+
+* **Right-aligned corruption.** Draft rows end at `W-2` for every block size, but an
+  MLX draw of shape `(B,3)` is not a sub-array of one of shape `(B,7)`, so arms saw
+  different noise under the same key. `noise_align_width` makes K=4/6/8 share noise on
+  every position they share. `None` reproduces U3/U4 exactly.
+* **Curriculum staging on a resume.** Stages divided the *absolute* step axis, so an
+  arm resumed at 12,800 of 16,000 would have trained entirely at K=8 -- a curriculum
+  arm that is not a curriculum.
+
+### The resource guard
+
+`src/qdif/uno/resource_guard.py` blocks `load_model()` -- the one place Qwen3.5-4B is
+instantiated -- whenever a BoothGPT pretraining process is visible. It **reads `ps` and
+nothing else**: a test tokenises the module and asserts `kill`/`signal`/`terminate`/
+`renice`/`Popen` never appear as code tokens, and that `subprocess.run` occurs exactly
+once with the fixed argument list `["ps", "-axo", "pid=,command="]`. It fails closed on
+an unreadable process table and does not detect itself. Override with
+`QDIF_ALLOW_HEAVY_DURING_PRETRAIN=1`, which warns loudly; do not use it while a
+pretraining run is live.
+
+**Status: Act IV-U, U2, U3 and U4 all complete.** U4 (horizon scaling) is the most
+recent: [`docs/act4u4_preregistered_criteria.md`](docs/act4u4_preregistered_criteria.md)
+(frozen), [`docs/act4u4_results.md`](docs/act4u4_results.md), `results/act4u4/`.
+
+### Act IV-U4 verdict: `K4 IS THE PRACTICAL FRONTIER`
+
+K=4 reached pre-registered saturation at step 6400 — 9600 further steps (3x U3's whole
+budget) moved teacher-forced agreement +0.008 against a 2 sd of 0.011. K=8 learns and
+commits more tokens per forward (TPF 1.4664 vs K=4's 1.4314) and beats AR at 1.074x,
+but is **0.910x K=4** on wall clock: it pays +11.9% per cycle for +2.4% TPF. Only
+**three speculative slots pay for themselves** at any block size tested. 11 of 13
+gates pass; the two failures are the result.
+
+Best measured: **K=4, 59.08 tok/s, 1.195x AR**, greedy (identical to native AR up to bf16
+ties; see Act IV-S), frozen backbone.
+
+**The finding that was not pre-registered, and the one worth chasing:** 3200 steps of
+K=8/K=6 training improved *K=4* decoding by more (accept +0.030, ~7 sd) than 9600
+further steps of K=4 training did (+0.010). A longer block may be a better *training*
+objective than it is an *inference* configuration. That is U5's first experiment, with
+the obvious control being 3200 more K=4 steps.
+
+**Tested in Act IV-U5 and not supported (2026-09-14).** The matched K=4 control gained
+two thirds of this effect by itself, no horizon arm beat it, and the "~7 sd" was measured
+against evaluation noise only, while separate training launches differ by more. Do not
+cite it as evidence for cross-horizon transfer.
+
+Two methodological corrections U4 makes to earlier Acts, both in the conservative
+direction:
+
+* **U3's "+1/+2 offsets" were speculative-slot indices.** Future offset `+j` is
+  supervised slot `j-1`, and `+1` is the adapter-off seed row (agreement 1.0 by
+  construction). U3's "+1" is U4's "+2". The U3 finding is unchanged; the labels move.
+* **U3's "repeat noise 1.95 tok/s" was ~12x too large.** It drew fresh global-RNG
+  draft noise per repeat, so repeats decoded different sequences. Keyed
+  (`src/qdif/uno/rng.py`), repeats are bit-identical and the jitter is 0.05-0.22
+  tok/s. Gate U3-4 was therefore harder than intended: **U3's conclusion stands and
+  was understated.**
+
+### Act IV-U verdict: `ALGORITHMIC SIGNAL, NO SPEEDUP`
+
+| gate | result |
+|---|---|
+| 0 — integrity | **PASS** — backbone byte-identical throughout; stage 0 26/26 |
+| 1 — learning (K=2) | **PASS** — 0.391 vs 0.063 untrained, shuffled control 0.039 |
+| 2 — prediction (K=4) | **WEAK** — 0.203 mean spec agreement (MODERATE needed 0.25) |
+| 3 — lossless decoding | **PASS** — 100% token equality, K=1,2,4, reference regime |
+| 4 — sequential steps | **FAIL** — TPF 0.980, needed > 1.000 |
+| 5 — wall clock | **FAIL** — 0.63–0.83× AR |
+
+**The next experiment is #1 in `act4u_results.md`: eliminate the replay forward.** It is
+worth more than any amount of extra training — removing that single term alone takes
+measured TPF 0.980 to a counterfactual 1.20–1.28. *(Done: Act IV-U2 removed it, TPF
+0.862 → 1.279 at K=4.)*
+
+**Three facts worth not re-deriving:**
+
+1. **The single-forward training layout does not survive Gated DeltaNet.** IFM's
+   `block_diff_mask` needs an arbitrary attention mask; 24/32 of our layers are causal
+   *by construction* and take only a padding mask. We use one noisy block per window
+   at the suffix and two plain causal forwards, which is exactly the computation the
+   draft pass performs at inference.
+2. **The backbone is not chunking-invariant.** Greedy decoding with a KV cache and
+   with full recomputation produce *different token sequences* on Qwen3.5-4B **with no
+   adapter involved**. So exact-losslessness is asserted in the cacheless reference
+   regime; the cached path is reported against AR-vs-AR disagreement as its noise floor.
+3. **TV has a vanishing gradient under saturation.** At lr 3e-4 the student's logits
+   blow up (absmax 24 → 76), the softmax goes one-hot, `|g|` hits 0 and the run
+   freezes at constant loss — which *reads as a null result*. Use IFM's 1e-5. A
+   saturation guard in `trainer.py` now raises instead of letting this pass silently.
+
+### Complete — RPRM diffusion, Stage 1: denoiser uncertainty *(STOP)*
+
+A separate, narrower pre-registered test built **on top of** the frozen Act IV-U4
+checkpoints (`runs/u4b2-k8` primary, `runs/uno-k4-true` replication) — not a numbered
+Act IV-U stage and does not revise any Act IV-U verdict. Asks whether the denoiser's
 own per-token uncertainty predicts the frozen verifier's accept/reject decision well
 enough to justify adaptive early exit.
 
@@ -182,11 +574,11 @@ monotone, token-specific, survives progress controls and a shuffled-permutation
 control, and is better-behaved than teacher entropy (no low-end inversion) — but adds
 only **+0.022 AUROC** over a progress-only baseline against a pre-registered **≥0.05**
 bar. Replicates independently on a second adapter. Stage 2 (the early-exit mechanism)
-was **not run**, per the pre-registered stop rule — and separately, this adapter's
-decoding is single-shot (one forward yields every proposal in a block), so there is no
-per-token denoising loop for early exit to save work from, regardless of signal
-strength. A diagnostic top-1-probability variant (+0.0358) is recorded as a diagnostic
-only, not a rescue.
+was **not run**, per the pre-registered stop rule — and separately, Uno decoding is
+single-shot (one adapter forward yields all `K−1` proposals), so there is no per-token
+denoising loop for early exit to save work from, regardless of signal strength. A
+diagnostic top-1-probability variant (+0.0358) is recorded as a diagnostic only, not a
+rescue.
 
 Docs: [`RPRM_DIFFUSION_STAGE0_AUDIT.md`](RPRM_DIFFUSION_STAGE0_AUDIT.md),
 [`RPRM_DIFFUSION_PREREG.md`](RPRM_DIFFUSION_PREREG.md) (frozen),
@@ -197,44 +589,215 @@ Docs: [`RPRM_DIFFUSION_STAGE0_AUDIT.md`](RPRM_DIFFUSION_STAGE0_AUDIT.md),
 Do not reopen this experiment, move its thresholds, or treat the diagnostic top-1
 result as a pass.
 
+### Paused — Act IV-N: structured corruption alphabet
+
+Replace the single `[MASK]` with a small corruption vocabulary
+`<NOISE_00>…<NOISE_31>` that lives **outside** the clean vocabulary, and ask whether
+noise states that carry information about the source token help — and whether they
+make genuinely aligned reverse information more useful.
+
+Design: `docs/structured_noise_diffusion_plan.md`.
+Frozen criteria: `docs/ACT4_CRITERIA.md`.
+
+> **These files are not in this branch's working tree.** Act IV-N's documents, configs, code
+> and tests are in `stash@{0}` ("Act IV-N paused work in progress"). Restore the stash
+> before following any Act IV-N path named in this file.
+
+**Status: ready to run Stage 2, PAUSED while Act IV-U is active. Do not start it
+without reading the criteria.**
+
+- Stage 0 (implementation sanity): **30/30 PASSED**
+- Stage 1 (each condition can learn): **PASSED** for all five conditions
+- Stage 2 (held-out separation): **not started**
+
 ---
 
 ## 7. Commands
 
-```bash
-.venv-unsloth/bin/qdif act3-train -c configs/act3_main.yaml
-.venv-unsloth/bin/qdif generate-trace --checkpoint runs/act3-main/checkpoint --prompt "The rain had stopped by morning" --steps 16
-.venv-unsloth/bin/qdif unsloth-report
-```
-
-Other `qdif` commands: `inspect`, `arch-report`, `corrupt`, `act3-check`,
-`probe-bidir`, `act3-compare`, `p3-report`, `memory`.
-
-`scripts/uno.py` trains and benchmarks the adapter checkpoints RPRM analyzes
-(`--help` lists subcommands: `stage0`, `baseline`, `overfit`, `train`, `bench`,
-`draftability`). It is supporting infrastructure for RPRM, not itself part of this
-release's results — see §1.
-
-RPRM Stage 1:
+### Act IV-S (speculative decoding) — evaluation only, no training
 
 ```bash
-export HF_HOME=/Volumes/SHUTTLE
-.venv-unsloth/bin/python scripts/rprm_stage1_extract.py \
-    --adapter runs/u4b2-k8/adapter.safetensors --block-size 8 --batches 320 --tag primary
-.venv-unsloth/bin/python scripts/rprm_stage1_analyze.py --tag primary
+cd /Users/johnathonkillaly/code/diffusion-u5
+export HF_HOME=/Volumes/SHUTTLE PYTHONPATH=$PWD/src
+PY=/Users/johnathonkillaly/code/diffusion_project/.venv-unsloth/bin/python
+
+$PY scripts/spec_decode.py --tag main --repeats 3 baseline --token-counts 128,256,512
+bash scripts/spec_run_all.sh                  # ksweep, controls, confidence, context (~75 min)
+$PY scripts/spec_decode.py --tag main --repeats 3 --tokens 128 adaptive \
+    --allowed 2,4,8 --cost-ms '{"2":46.67,"4":49.81,"8":53.81}'
 ```
 
-Analysis alone (seconds, no model, operates on the committed CSVs):
+Integrity checks — run these before believing any speedup:
 
 ```bash
-.venv-unsloth/bin/python scripts/rprm_stage1_analyze.py --tag primary
+$PY scripts/spec_audit.py divergence --file main_ksweep.json   # bug, or bf16 tie?
+$PY scripts/spec_audit.py degeneration --lengths 128,512       # is the text looping?
 ```
+
+Tables and all 12 plots, from the committed JSON alone (seconds, no model):
+
+```bash
+$PY scripts/spec_report.py --tag main
+```
+
+`spec_report.py` **recomputes** every summary from the raw rows rather than trusting the
+stored one, so a metric added to `aggregate()` later appears in earlier results without
+re-running the GPU. Run the experiments **sequentially** — two at once contend for the
+GPU and every wall-clock number in both is void.
+
+### Act IV-U (Uno)
+
+Everything goes through one runner. Every subcommand writes a JSON artifact under
+`runs/` carrying the git SHA, versions, seed and full config.
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py stage0
+```
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py baseline --decode-tokens 48
+```
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py overfit --block-size 4 --steps 120 --lr 1e-5
+```
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py train --block-size 4 --steps 400 --lr 1e-5 --out runs/uno-k4-true
+```
+
+Control 2 is the same command plus `--shuffle-targets`. Control 1 is `bench` with no
+adapter. Benchmark a trained adapter against the AR baseline in one harness:
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py bench --adapter runs/uno-k4-true/adapter.safetensors --block-sizes 1,2,4,8
+```
+
+Act IV-U2 — transactional decoding (the fast path) and the draftability analysis:
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py bench --adapter runs/uno-k4-true/adapter.safetensors --block-sizes 2,4 --transaction-modes replay,snapshot,rewind
+```
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py draftability --adapter runs/uno-k4-true/adapter.safetensors --block-size 8 --eval-batches 96
+```
+
+Act IV-U3 — scaling run, then evaluate every checkpoint in ONE session:
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py train --block-size 4 --steps 3200 --lr 1e-5 --checkpoint-steps 400,800,1200,1600,2400,3200 --out runs/u3a
+```
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py u3-eval --checkpoint step-400=runs/u3a/step-400 --checkpoint step-3200=runs/u3a/step-3200 --block-sizes 2,4 --out runs/u3a/eval.json
+```
+
+```bash
+.venv-unsloth/bin/python scripts/u3_report.py --eval runs/u3a/eval.json --out results/act4u3
+```
+
+Act IV-U4 — horizon scaling. Resume is **exact**: the adapter, the AdamW moments, the
+step, the data position and the noise stream all continue, and
+`tests/test_uno_resume.py` proves a split run is bitwise-identical to an
+uninterrupted one.
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py train --block-size 4 --steps 12800 --resume-from runs/u3a/step-3200 --checkpoint-steps 4800,6400,8000,9600,11200,12800 --eval-every 100 --eval-batches 8 --out runs/u4a
+```
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py u4-eval --checkpoint step-3200=runs/u3a/step-3200 --checkpoint step-12800=runs/u4a/step-12800 --block-sizes 2,4,8 --eval-batches 64 --out runs/u4a/eval.json
+```
+
+```bash
+.venv-unsloth/bin/python scripts/u4_report.py --eval runs/u4a/eval.json --training runs/u4a/result.json --out results/act4u4
+```
+
+Harness calibration (three replicates of one frozen checkpoint, differing only in the
+noise seeds) is how U4's thresholds were set — rerun it before changing any of them:
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/python scripts/uno.py u4-eval --checkpoint step-3200=runs/u3a/step-3200 --block-sizes 2,4,8 --eval-batches 64 --noise-stream-seed 77000001 --eval-noise-seed 44000001 --out runs/u4-calib/rep2.json
+```
+
+Act IV-U tests (no checkpoint needed — they use `qdif.uno.tiny`):
+
+```bash
+.venv-unsloth/bin/python -m pytest -q tests/test_uno_gated_lora.py tests/test_uno_verifier.py tests/test_uno_decode.py tests/test_uno_teacher.py tests/test_uno_losses.py
+```
+
+### Act IV-N (structured noise) — paused
+
+Stage 0 — implementation sanity (fast, no training):
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/qdif act4-stage0 -c configs/act4/stage1_E_semantic_designated.yaml
+```
+
+Rebuild the bucket tables (only if the model or `k` changes):
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/qdif build-buckets -c configs/act4/stage2_E_semantic_designated.yaml --num-states 32
+```
+
+Stage 1 — one condition, ~1.7 min:
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/qdif act4-train -c configs/act4/stage1_E_semantic_designated.yaml
+```
+
+Stage 2 — the full 11-run matrix, ~2 h (**the next real step**):
+
+```bash
+./scripts/run_act4_stage2.sh
+```
+
+Score Stage 2 mechanically against the frozen criteria:
+
+```bash
+HF_HOME=/Volumes/SHUTTLE .venv-unsloth/bin/qdif act4-report --runs runs --out runs/act4-logs/report.json
+```
+
+Regenerate configs after editing the generator:
+
+```bash
+.venv-unsloth/bin/python scripts/make_act4_configs.py
+```
+
+Prior work: `qdif act3-train`, `act3-check`, `heldout`, `p3-report`, `probe-bidir`,
+`unsloth-report`, `generate-trace`, `inspect`, `memory`.
 
 ---
 
-## 8. Working agreements
+## 8. Act IV design facts worth not re-deriving
 
-- Do **not** launch a long training run unless asked.
+- **`tie_word_embeddings = True`.** The readout *is* the embedding table. This is why
+  noise states need a side table (`E_noise`) rather than spare embedding rows: a spare
+  row would be a legal output. Noise ids start at `noise_base = 248,320 = model vocab`,
+  outside the readout's index range, so they are structurally unemittable.
+- **All conditions share one `E_noise` initialisation seed and distribution** (Gaussian
+  rescaled to the mean token-embedding norm, 0.661). Initialising semantic states at
+  their cluster centroids would confound "semantic buckets help" with "semantic
+  initialisation helps".
+- **Condition D is a *permutation* of condition E's assignment.** Bucket sizes and
+  therefore `H(bucket)` are identical to machine precision (measured `|ΔH| = 0.00e+00`,
+  4.1163 of 5.0 bits). This is what makes E-vs-D a test of structure rather than of
+  information quantity. **The comparison that matters is E vs D, never E vs A.**
+- **Two RNG streams**, one for the corrupted set and one for the noise states, so all
+  five conditions corrupt *exactly the same positions* of the same examples.
+- **Reverse arms all run at the same gate (0.5)** and the shuffled control resamples
+  its permutation every forward pass. Both fix Act II defects; legacy defaults are
+  preserved so the old configs still reproduce.
+- **Cluster caveat:** clusters 21 and 23 hold the same lemmas split by capitalisation
+  and leading whitespace, so "semantic" buckets also encode surface form. Any E-over-D
+  gain may be partly orthographic. Recorded as an interpretation limit.
+
+---
+
+## 9. Working agreements
+
+- Do **not** launch a long training run unless asked. Stage 2 is ~2 hours.
 - Report failures plainly, with the output. If a criterion fails, it failed.
 - Prefer adding a control over adding a metric.
 - When you find a flaw in past work, fix it **and** write down what it invalidates —

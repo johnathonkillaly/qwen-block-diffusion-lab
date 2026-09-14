@@ -1,0 +1,164 @@
+{
+  "generated": "2026-09-14",
+  "note": "Weights are not in git (*.safetensors is ignored). Paths are relative to the working tree's runs/ directory. Verify any copy with `shasum -a 256 adapter.safetensors`.",
+  "base_model": {
+    "hf_id": "unsloth/Qwen3.5-4B-Base",
+    "snapshot": "61541fe4aed37b6a1e615edd5cbf5a3f660312b1",
+    "dtype": "bfloat16",
+    "params": 4205751296,
+    "backbone_digest": "7cd0f5a9bce55681729d390a530630b6fc8ae8c5e683ca4f417532895759e097",
+    "redistributed": false
+  },
+  "adapters": [
+    {
+      "id": "act4u3_endpoint_k4",
+      "path": "runs/u3a/step-3200",
+      "role": "Act IV-U3 K=4 endpoint",
+      "exists": true,
+      "adapter_sha256": "abc82b17ffc3bc3989af3b2ec2d7df2248bcb42d75b01f291f957c3d3b22f307",
+      "adapter_bytes": 84966094,
+      "step": 3200,
+      "block_size": null,
+      "config_hash": null,
+      "optimizer_bytes": 169933834
+    },
+    {
+      "id": "u5_shared_start",
+      "path": "runs/u4a/step-12800",
+      "role": "Act IV-U4-A K=4 saturated; Act IV-U5 shared start",
+      "exists": true,
+      "adapter_sha256": "8332986b8a411f589f8f05d2a2f067a60ae7d7e34d8c2261ec22a89ac5460750",
+      "adapter_bytes": 84966094,
+      "step": 12800,
+      "block_size": 4,
+      "config_hash": "846fa021a8294cbe6d69a1af31b6445380ea801d88447325beb3f1bd183443a6",
+      "optimizer_bytes": 169933846
+    },
+    {
+      "id": "act4s_u6_drafter",
+      "path": "runs/u4b1/step-16000",
+      "role": "Act IV-U4 arm B1; the frozen drafter for Act IV-S and Act IV-U6",
+      "exists": true,
+      "adapter_sha256": "8200c339d3d47363a3920fc4aca58f3535fc8bf75be431e35204f374700a4f42",
+      "adapter_bytes": 84966094,
+      "step": 16000,
+      "block_size": 8,
+      "config_hash": "bd2dbffae35cc6db772d38d65882700a61d69d8571d1782fcb7268410b03df5b",
+      "optimizer_bytes": 169933846
+    },
+    {
+      "id": "rprm_primary",
+      "path": "runs/u4b2-k8/step-16000",
+      "role": "Act IV-U4 arm B2; RPRM Stage 1 primary adapter",
+      "exists": true,
+      "adapter_sha256": "284f00ed247d85cf227e2ea3f3dfc8bbbe70fef0d4bcf8c5ff73aa0d27750eed",
+      "adapter_bytes": 84966094,
+      "step": 16000,
+      "block_size": 8,
+      "config_hash": "bd2dbffae35cc6db772d38d65882700a61d69d8571d1782fcb7268410b03df5b",
+      "optimizer_bytes": 169933846
+    },
+    {
+      "id": "rprm_replication",
+      "path": "runs/uno-k4-true",
+      "role": "Act IV-U K=4; RPRM Stage 1 replication adapter",
+      "exists": true,
+      "adapter_sha256": "37cc5f8e6c258d47ad2fe82b562cef8e11ceff780ad02868adfba6de60d23ce0",
+      "adapter_bytes": 84966094
+    },
+    {
+      "id": "u5_A_k4",
+      "path": "runs/u5/A_k4/step-16000",
+      "role": "Act IV-U5 arm A_k4 endpoint",
+      "exists": true,
+      "adapter_sha256": "177f4b0c858c6ce2de8c9231743a6d17afefa689a56fe3ed3263ed5acadb43fb",
+      "adapter_bytes": 84966094,
+      "step": 16000,
+      "block_size": 4,
+      "config_hash": "d690884d09937604629ef2c3c461838c3dd817a792e38aad4d20c38ec764f046",
+      "optimizer_bytes": 169933846
+    },
+    {
+      "id": "u5_A_k4_r2",
+      "path": "runs/u5/A_k4_r2/step-16000",
+      "role": "Act IV-U5 arm A_k4_r2 endpoint",
+      "exists": true,
+      "adapter_sha256": "5958319aaaa5f7ac3b814fa72f429741779752612002dfd1a9a614d9e4feaeb2",
+      "adapter_bytes": 84966094,
+      "step": 16000,
+      "block_size": 4,
+      "config_hash": "d690884d09937604629ef2c3c461838c3dd817a792e38aad4d20c38ec764f046",
+      "optimizer_bytes": 169933846
+    },
+    {
+      "id": "u5_A_k4_r3",
+      "path": "runs/u5/A_k4_r3/step-16000",
+      "role": "Act IV-U5 arm A_k4_r3 endpoint",
+      "exists": true,
+      "adapter_sha256": "a55cce21b435f5947fbb9a0f01efd8b295e6a6a8c4cf7d523a0eb0adec07b30c",
+      "adapter_bytes": 84966094,
+      "step": 16000,
+      "block_size": 4,
+      "config_hash": "d690884d09937604629ef2c3c461838c3dd817a792e38aad4d20c38ec764f046",
+      "optimizer_bytes": 169933846
+    },
+    {
+      "id": "u5_B_k6",
+      "path": "runs/u5/B_k6/step-16000",
+      "role": "Act IV-U5 arm B_k6 endpoint",
+      "exists": true,
+      "adapter_sha256": "ef8a2febe85e7fc2e994edd2d64c1a1aa4eb852dd9967684b464b98062eebb39",
+      "adapter_bytes": 84966094,
+      "step": 16000,
+      "block_size": 6,
+      "config_hash": "53ee2543d2d72116a35760e815a55f040833a73dabbbc0d997861bc0edc33d2b",
+      "optimizer_bytes": 169933846
+    },
+    {
+      "id": "u5_C_k8",
+      "path": "runs/u5/C_k8/step-16000",
+      "role": "Act IV-U5 arm C_k8 endpoint",
+      "exists": true,
+      "adapter_sha256": "e38e960eb1b917e5d5289c78ec663475e32c2c8ca8f305da813f8f5908c527d7",
+      "adapter_bytes": 84966094,
+      "step": 16000,
+      "block_size": 8,
+      "config_hash": "2025641001d32a2e85668450daf41ada12222eec3cdae245ad87b62824e30fe3",
+      "optimizer_bytes": 169933846
+    },
+    {
+      "id": "u5_C_k8_r2",
+      "path": "runs/u5/C_k8_r2/step-16000",
+      "role": "Act IV-U5 arm C_k8_r2 endpoint",
+      "exists": true,
+      "adapter_sha256": "e2588a5c555934c7adddd4ff4ab9732631719b66a460575b8c9652d2a2f758b9",
+      "adapter_bytes": 84966094,
+      "step": 16000,
+      "block_size": 8,
+      "config_hash": "2025641001d32a2e85668450daf41ada12222eec3cdae245ad87b62824e30fe3",
+      "optimizer_bytes": 169933846
+    },
+    {
+      "id": "u5_D_curr",
+      "path": "runs/u5/D_curr/step-16000",
+      "role": "Act IV-U5 arm D_curr endpoint",
+      "exists": true,
+      "adapter_sha256": "f0465a5acc2231a2ee2aa32e44c83175364e12f98f9dcb846f1e0a8bd0223ae1",
+      "adapter_bytes": 84966094,
+      "step": 16000,
+      "block_size": 8,
+      "config_hash": "45f6f0dc394e486e6670655dfadb4d45e730299d76ee5273f02eb51ded8ba449",
+      "optimizer_bytes": 169933846
+    }
+  ],
+  "release_strategy": "Only the canonical adapter (act4s_u6_drafter) is published, as a GitHub release asset under the tag above. Other checkpoints and all optimizer state stay local; their digests are recorded here for provenance. Weights never go into git history. The base model is not redistributed.",
+  "public_release": {
+    "tag": "diffusion-specdecode-v0.1",
+    "url": "https://github.com/johnathonkillaly/qwen-block-diffusion-lab/releases/tag/diffusion-specdecode-v0.1",
+    "adapter_id": "act4s_u6_drafter",
+    "asset_filename": "qwen3.5-4b-base-diffusion-drafter-u4b1-step16000.safetensors",
+    "sha256": "8200c339d3d47363a3920fc4aca58f3535fc8bf75be431e35204f374700a4f42",
+    "bytes": 84966094,
+    "note": "Only this adapter is published. Other entries are listed for provenance only."
+  }
+}

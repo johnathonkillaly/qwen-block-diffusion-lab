@@ -1,0 +1,183 @@
+{
+  "code_and_packages": {
+    "snapshots": [
+      "env_orchestrator_start_20260913-113720.txt",
+      "env_prelaunch_A_k4_r2.txt",
+      "env_prelaunch_A_k4_r3.txt",
+      "env_prelaunch_C_k8_r2.txt",
+      "env_primary_exit_20260913-172227.txt"
+    ],
+    "identical": true,
+    "distinct_bodies": 1
+  },
+  "replicates": {
+    "A_k4_r2": {
+      "primary_arm": "A_k4",
+      "start": {
+        "identical": true,
+        "checks": {
+          "step": true,
+          "config_hash": true,
+          "data_position": true,
+          "adapter_file_sha256": true,
+          "adapter_combined": true,
+          "optimizer_file_sha256": true,
+          "optimizer_combined": true
+        },
+        "adapter_file_sha256": "8332986b8a411f589f8f05d2a2f067a60ae7d7e34d8c2261ec22a89ac5460750",
+        "optimizer_file_sha256": "e93eabcb67e9ed1202a21ba2265a21161e6b83d7710518dda25dbc16d0a5da7e",
+        "config_hash": "846fa021a8294cbe6d69a1af31b6445380ea801d88447325beb3f1bd183443a6",
+        "step": 12800
+      },
+      "argv": {
+        "checked": true,
+        "identical": true,
+        "primary_args_sha256": "37218bf4f4a743ed7240acfaaa28be7de5fcc3740f18226d8af540e90691076b",
+        "replicate_args_sha256": "37218bf4f4a743ed7240acfaaa28be7de5fcc3740f18226d8af540e90691076b",
+        "interpreter_identical": true,
+        "differing_tokens": []
+      },
+      "environ": {
+        "checked": true,
+        "identical": true,
+        "primary": [
+          "HF_HOME=/Volumes/SHUTTLE",
+          "PYTHONPATH=/Users/johnathonkillaly/code/diffusion-u5/src"
+        ],
+        "replicate": [
+          "HF_HOME=/Volumes/SHUTTLE",
+          "PYTHONPATH=/Users/johnathonkillaly/code/diffusion-u5/src"
+        ]
+      },
+      "end": {
+        "identical": true,
+        "checks": {
+          "config_hash": true,
+          "seed": true,
+          "block_size": true,
+          "step": true,
+          "data_position": true,
+          "rng": true
+        },
+        "config_hash": "d690884d09937604629ef2c3c461838c3dd817a792e38aad4d20c38ec764f046",
+        "primary_adapter_combined": "14202b49190aff56ad5803363a57ed63104c98ff2dae79deca60920155c44608",
+        "replicate_adapter_combined": "98ca42c286c1dd1753e2e3337d9ba8cd858996e780950ff36e5d5a8f4e859535",
+        "adapter_diverged": true,
+        "optimizer_diverged": true
+      },
+      "identical_launch": true
+    },
+    "A_k4_r3": {
+      "primary_arm": "A_k4",
+      "start": {
+        "identical": true,
+        "checks": {
+          "step": true,
+          "config_hash": true,
+          "data_position": true,
+          "adapter_file_sha256": true,
+          "adapter_combined": true,
+          "optimizer_file_sha256": true,
+          "optimizer_combined": true
+        },
+        "adapter_file_sha256": "8332986b8a411f589f8f05d2a2f067a60ae7d7e34d8c2261ec22a89ac5460750",
+        "optimizer_file_sha256": "e93eabcb67e9ed1202a21ba2265a21161e6b83d7710518dda25dbc16d0a5da7e",
+        "config_hash": "846fa021a8294cbe6d69a1af31b6445380ea801d88447325beb3f1bd183443a6",
+        "step": 12800
+      },
+      "argv": {
+        "checked": true,
+        "identical": true,
+        "primary_args_sha256": "37218bf4f4a743ed7240acfaaa28be7de5fcc3740f18226d8af540e90691076b",
+        "replicate_args_sha256": "37218bf4f4a743ed7240acfaaa28be7de5fcc3740f18226d8af540e90691076b",
+        "interpreter_identical": true,
+        "differing_tokens": []
+      },
+      "environ": {
+        "checked": true,
+        "identical": true,
+        "primary": [
+          "HF_HOME=/Volumes/SHUTTLE",
+          "PYTHONPATH=/Users/johnathonkillaly/code/diffusion-u5/src"
+        ],
+        "replicate": [
+          "HF_HOME=/Volumes/SHUTTLE",
+          "PYTHONPATH=/Users/johnathonkillaly/code/diffusion-u5/src"
+        ]
+      },
+      "end": {
+        "identical": true,
+        "checks": {
+          "config_hash": true,
+          "seed": true,
+          "block_size": true,
+          "step": true,
+          "data_position": true,
+          "rng": true
+        },
+        "config_hash": "d690884d09937604629ef2c3c461838c3dd817a792e38aad4d20c38ec764f046",
+        "primary_adapter_combined": "14202b49190aff56ad5803363a57ed63104c98ff2dae79deca60920155c44608",
+        "replicate_adapter_combined": "d2f003983c330d1e9b73d6708cdec9c3e024e089896a7983ac33b769b1cb3aee",
+        "adapter_diverged": true,
+        "optimizer_diverged": true
+      },
+      "identical_launch": true
+    },
+    "C_k8_r2": {
+      "primary_arm": "C_k8",
+      "start": {
+        "identical": true,
+        "checks": {
+          "step": true,
+          "config_hash": true,
+          "data_position": true,
+          "adapter_file_sha256": true,
+          "adapter_combined": true,
+          "optimizer_file_sha256": true,
+          "optimizer_combined": true
+        },
+        "adapter_file_sha256": "8332986b8a411f589f8f05d2a2f067a60ae7d7e34d8c2261ec22a89ac5460750",
+        "optimizer_file_sha256": "e93eabcb67e9ed1202a21ba2265a21161e6b83d7710518dda25dbc16d0a5da7e",
+        "config_hash": "846fa021a8294cbe6d69a1af31b6445380ea801d88447325beb3f1bd183443a6",
+        "step": 12800
+      },
+      "argv": {
+        "checked": true,
+        "identical": true,
+        "primary_args_sha256": "75c926a2ac9b200bb581ac7ad3578ff2a5bb4deb599b843fc656c8f66062d12b",
+        "replicate_args_sha256": "75c926a2ac9b200bb581ac7ad3578ff2a5bb4deb599b843fc656c8f66062d12b",
+        "interpreter_identical": true,
+        "differing_tokens": []
+      },
+      "environ": {
+        "checked": true,
+        "identical": true,
+        "primary": [
+          "HF_HOME=/Volumes/SHUTTLE",
+          "PYTHONPATH=/Users/johnathonkillaly/code/diffusion-u5/src"
+        ],
+        "replicate": [
+          "HF_HOME=/Volumes/SHUTTLE",
+          "PYTHONPATH=/Users/johnathonkillaly/code/diffusion-u5/src"
+        ]
+      },
+      "end": {
+        "identical": true,
+        "checks": {
+          "config_hash": true,
+          "seed": true,
+          "block_size": true,
+          "step": true,
+          "data_position": true,
+          "rng": true
+        },
+        "config_hash": "2025641001d32a2e85668450daf41ada12222eec3cdae245ad87b62824e30fe3",
+        "primary_adapter_combined": "7c1673d6f14ea9d9ebd1f4a7662e47e646ea299be6528fcd3f473dabc1e0cf01",
+        "replicate_adapter_combined": "3b38eae4b2343cee9b0dfcf29b605de939641ffa7a29bcfade1da24027542f6a",
+        "adapter_diverged": true,
+        "optimizer_diverged": true
+      },
+      "identical_launch": true
+    }
+  }
+}

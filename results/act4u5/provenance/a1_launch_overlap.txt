@@ -1,0 +1,13 @@
+# Act IV-U5 criteria §11 A1: the same A_k4 launch, twice, from runs/u4a/step-12800.
+# launch 1 (killed at step 13090 by a session restart; no checkpoint written):
+[uno] step 12800 B=4 loss 0.2775 tv 0.2775 |g| 12.359 logit_absmax 24.2
+[uno] step 12810 B=4 loss 0.4221 tv 0.4221 |g| 8.470 logit_absmax 23.0
+[uno] step 12820 B=4 loss 0.7120 tv 0.7120 |g| 8.021 logit_absmax 21.4
+[uno] step 12830 B=4 loss 0.6479 tv 0.6479 |g| 7.732 logit_absmax 24.1
+[uno] step 12840 B=4 loss 0.2433 tv 0.2433 |g| 3.991 logit_absmax 25.1
+# launch 2 (the primary run):
+[uno] step 12800 B=4 loss 0.2775 tv 0.2775 |g| 12.351 logit_absmax 24.2
+[uno] step 12810 B=4 loss 0.4168 tv 0.4168 |g| 8.098 logit_absmax 23.0
+[uno] step 12820 B=4 loss 0.7129 tv 0.7129 |g| 7.761 logit_absmax 21.4
+[uno] step 12830 B=4 loss 0.6475 tv 0.6475 |g| 7.782 logit_absmax 24.1
+[uno] step 12840 B=4 loss 0.2450 tv 0.2450 |g| 4.164 logit_absmax 25.1

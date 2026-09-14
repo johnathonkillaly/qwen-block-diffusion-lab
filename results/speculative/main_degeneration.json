@@ -1,0 +1,563 @@
+{
+  "by_length": {
+    "128": {
+      "mean_looped_fraction": 0.1788,
+      "mean_acceptance": 0.3747,
+      "r_loop_vs_acceptance": 0.5231,
+      "clean_rows": 16,
+      "clean_mean_acceptance": 0.3615,
+      "looped_mean_acceptance": 0.394
+    },
+    "512": {
+      "mean_looped_fraction": 0.4983,
+      "mean_acceptance": 0.4743,
+      "r_loop_vs_acceptance": 0.4288,
+      "clean_rows": 4,
+      "clean_mean_acceptance": 0.3803,
+      "looped_mean_acceptance": 0.4906
+    }
+  },
+  "rows": [
+    {
+      "max_tokens": 128,
+      "category": "prose",
+      "prompt": "The history of the printing press begins in the fifteenth ce",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.5469,
+      "acceptance_rate": 0.2041,
+      "tokens_per_second": 52.675,
+      "mean_accepted": 0.6122
+    },
+    {
+      "max_tokens": 128,
+      "category": "prose",
+      "prompt": "He looked across the room and",
+      "looped_fraction": 0.1983,
+      "distinct_ratio": 0.4375,
+      "acceptance_rate": 0.2681,
+      "tokens_per_second": 56.313,
+      "mean_accepted": 0.8043
+    },
+    {
+      "max_tokens": 128,
+      "category": "prose",
+      "prompt": "In the years following the war, the city",
+      "looped_fraction": 0.0248,
+      "distinct_ratio": 0.5078,
+      "acceptance_rate": 0.5135,
+      "tokens_per_second": 69.137,
+      "mean_accepted": 1.5405
+    },
+    {
+      "max_tokens": 128,
+      "category": "factual",
+      "prompt": "The capital of France is",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.3359,
+      "acceptance_rate": 0.5463,
+      "tokens_per_second": 70.771,
+      "mean_accepted": 1.6389
+    },
+    {
+      "max_tokens": 128,
+      "category": "factual",
+      "prompt": "Water boils at a temperature of",
+      "looped_fraction": 0.1074,
+      "distinct_ratio": 0.4531,
+      "acceptance_rate": 0.2815,
+      "tokens_per_second": 56.791,
+      "mean_accepted": 0.8444
+    },
+    {
+      "max_tokens": 128,
+      "category": "factual",
+      "prompt": "The largest planet in the solar system is",
+      "looped_fraction": 0.0083,
+      "distinct_ratio": 0.4688,
+      "acceptance_rate": 0.3492,
+      "tokens_per_second": 60.896,
+      "mean_accepted": 1.0476
+    },
+    {
+      "max_tokens": 128,
+      "category": "code",
+      "prompt": "def fibonacci(n):\n    if n <= 1:\n        return n\n    return",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.5391,
+      "acceptance_rate": 0.3256,
+      "tokens_per_second": 58.467,
+      "mean_accepted": 0.9767
+    },
+    {
+      "max_tokens": 128,
+      "category": "code",
+      "prompt": "import numpy as np\n\ndef normalize(x):\n    \"\"\"Scale x to zero",
+      "looped_fraction": 0.3719,
+      "distinct_ratio": 0.2812,
+      "acceptance_rate": 0.2815,
+      "tokens_per_second": 56.044,
+      "mean_accepted": 0.8444
+    },
+    {
+      "max_tokens": 128,
+      "category": "code",
+      "prompt": "for i in range(10):\n    print(",
+      "looped_fraction": 0.5455,
+      "distinct_ratio": 0.2031,
+      "acceptance_rate": 0.425,
+      "tokens_per_second": 63.314,
+      "mean_accepted": 1.275
+    },
+    {
+      "max_tokens": 128,
+      "category": "math",
+      "prompt": "To solve the equation 2x + 5 = 13, we first subtract 5 from ",
+      "looped_fraction": 0.0413,
+      "distinct_ratio": 0.3828,
+      "acceptance_rate": 0.4912,
+      "tokens_per_second": 65.799,
+      "mean_accepted": 1.4737
+    },
+    {
+      "max_tokens": 128,
+      "category": "math",
+      "prompt": "The derivative of x^3 with respect to x is",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.5938,
+      "acceptance_rate": 0.2681,
+      "tokens_per_second": 55.218,
+      "mean_accepted": 0.8043
+    },
+    {
+      "max_tokens": 128,
+      "category": "math",
+      "prompt": "If a triangle has sides of length 3, 4 and 5, then",
+      "looped_fraction": 0.4628,
+      "distinct_ratio": 0.2578,
+      "acceptance_rate": 0.453,
+      "tokens_per_second": 64.217,
+      "mean_accepted": 1.359
+    },
+    {
+      "max_tokens": 128,
+      "category": "structured",
+      "prompt": "{\"name\": \"Ada Lovelace\", \"born\": 1815, \"known_for\":",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.6406,
+      "acceptance_rate": 0.3106,
+      "tokens_per_second": 57.032,
+      "mean_accepted": 0.9318
+    },
+    {
+      "max_tokens": 128,
+      "category": "structured",
+      "prompt": "| Country | Capital |\n| --- | --- |\n| France | Paris |\n| Jap",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.4219,
+      "acceptance_rate": 0.5185,
+      "tokens_per_second": 68.823,
+      "mean_accepted": 1.5556
+    },
+    {
+      "max_tokens": 128,
+      "category": "structured",
+      "prompt": "Ingredients:\n- 2 cups flour\n- 1 cup sugar\n-",
+      "looped_fraction": 0.2066,
+      "distinct_ratio": 0.2109,
+      "acceptance_rate": 0.4444,
+      "tokens_per_second": 64.751,
+      "mean_accepted": 1.3333
+    },
+    {
+      "max_tokens": 128,
+      "category": "technical",
+      "prompt": "The TCP three-way handshake begins when the client sends a S",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.6172,
+      "acceptance_rate": 0.2292,
+      "tokens_per_second": 52.717,
+      "mean_accepted": 0.6875
+    },
+    {
+      "max_tokens": 128,
+      "category": "technical",
+      "prompt": "In a B-tree of order m, every internal node other than the r",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.6641,
+      "acceptance_rate": 0.2222,
+      "tokens_per_second": 52.203,
+      "mean_accepted": 0.6667
+    },
+    {
+      "max_tokens": 128,
+      "category": "technical",
+      "prompt": "Gradient descent converges to a local minimum provided the l",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.6562,
+      "acceptance_rate": 0.2109,
+      "tokens_per_second": 51.738,
+      "mean_accepted": 0.6327
+    },
+    {
+      "max_tokens": 128,
+      "category": "dialogue",
+      "prompt": "\"I told you it would rain,\" she said. \"Did you bring\"",
+      "looped_fraction": 0.0661,
+      "distinct_ratio": 0.4219,
+      "acceptance_rate": 0.1296,
+      "tokens_per_second": 46.829,
+      "mean_accepted": 0.3889
+    },
+    {
+      "max_tokens": 128,
+      "category": "dialogue",
+      "prompt": "User: How do I reset my password?\nAssistant: To reset your p",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.4609,
+      "acceptance_rate": 0.425,
+      "tokens_per_second": 62.42,
+      "mean_accepted": 1.275
+    },
+    {
+      "max_tokens": 128,
+      "category": "dialogue",
+      "prompt": "\"Are you coming to the meeting?\"\n\"I can't,\" he replied, \"bec",
+      "looped_fraction": 0.8264,
+      "distinct_ratio": 0.1172,
+      "acceptance_rate": 0.4274,
+      "tokens_per_second": 63.755,
+      "mean_accepted": 1.2821
+    },
+    {
+      "max_tokens": 128,
+      "category": "reasoning",
+      "prompt": "All birds have feathers. A penguin is a bird. Therefore a pe",
+      "looped_fraction": 0.0413,
+      "distinct_ratio": 0.4375,
+      "acceptance_rate": 0.4359,
+      "tokens_per_second": 64.682,
+      "mean_accepted": 1.3077
+    },
+    {
+      "max_tokens": 128,
+      "category": "reasoning",
+      "prompt": "If it takes 5 machines 5 minutes to make 5 widgets, then 100",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.4062,
+      "acceptance_rate": 0.4444,
+      "tokens_per_second": 63.871,
+      "mean_accepted": 1.3333
+    },
+    {
+      "max_tokens": 128,
+      "category": "reasoning",
+      "prompt": "Alice is taller than Bob, and Bob is taller than Carol. The ",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.5391,
+      "acceptance_rate": 0.2889,
+      "tokens_per_second": 55.684,
+      "mean_accepted": 0.8667
+    },
+    {
+      "max_tokens": 128,
+      "category": "high_entropy",
+      "prompt": "qx7 zephyr blorp 44 tangent mauve",
+      "looped_fraction": 0.9752,
+      "distinct_ratio": 0.0234,
+      "acceptance_rate": 0.8276,
+      "tokens_per_second": 86.977,
+      "mean_accepted": 2.4828
+    },
+    {
+      "max_tokens": 128,
+      "category": "high_entropy",
+      "prompt": "The seventeenth ingredient on the unlabelled jar read",
+      "looped_fraction": 0.2975,
+      "distinct_ratio": 0.2422,
+      "acceptance_rate": 0.25,
+      "tokens_per_second": 52.937,
+      "mean_accepted": 0.75
+    },
+    {
+      "max_tokens": 128,
+      "category": "high_entropy",
+      "prompt": "Random words: carpet, velocity, plum, ardent,",
+      "looped_fraction": 0.6529,
+      "distinct_ratio": 0.1641,
+      "acceptance_rate": 0.5463,
+      "tokens_per_second": 70.328,
+      "mean_accepted": 1.6389
+    },
+    {
+      "max_tokens": 512,
+      "category": "prose",
+      "prompt": "The history of the printing press begins in the fifteenth ce",
+      "looped_fraction": 0.4653,
+      "distinct_ratio": 0.2109,
+      "acceptance_rate": 0.4409,
+      "tokens_per_second": 66.107,
+      "mean_accepted": 1.3226
+    },
+    {
+      "max_tokens": 512,
+      "category": "prose",
+      "prompt": "He looked across the room and",
+      "looped_fraction": 0.2733,
+      "distinct_ratio": 0.248,
+      "acceptance_rate": 0.2509,
+      "tokens_per_second": 55.156,
+      "mean_accepted": 0.7527
+    },
+    {
+      "max_tokens": 512,
+      "category": "prose",
+      "prompt": "In the years following the war, the city",
+      "looped_fraction": 0.2317,
+      "distinct_ratio": 0.2832,
+      "acceptance_rate": 0.6798,
+      "tokens_per_second": 80.817,
+      "mean_accepted": 2.0394
+    },
+    {
+      "max_tokens": 512,
+      "category": "factual",
+      "prompt": "The capital of France is",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.3223,
+      "acceptance_rate": 0.6095,
+      "tokens_per_second": 76.535,
+      "mean_accepted": 1.8284
+    },
+    {
+      "max_tokens": 512,
+      "category": "factual",
+      "prompt": "Water boils at a temperature of",
+      "looped_fraction": 0.0356,
+      "distinct_ratio": 0.2773,
+      "acceptance_rate": 0.4021,
+      "tokens_per_second": 64.257,
+      "mean_accepted": 1.2063
+    },
+    {
+      "max_tokens": 512,
+      "category": "factual",
+      "prompt": "The largest planet in the solar system is",
+      "looped_fraction": 0.499,
+      "distinct_ratio": 0.2109,
+      "acceptance_rate": 0.4416,
+      "tokens_per_second": 66.679,
+      "mean_accepted": 1.3247
+    },
+    {
+      "max_tokens": 512,
+      "category": "code",
+      "prompt": "def fibonacci(n):\n    if n <= 1:\n        return n\n    return",
+      "looped_fraction": 0.6079,
+      "distinct_ratio": 0.1406,
+      "acceptance_rate": 0.451,
+      "tokens_per_second": 66.803,
+      "mean_accepted": 1.3529
+    },
+    {
+      "max_tokens": 512,
+      "category": "code",
+      "prompt": "import numpy as np\n\ndef normalize(x):\n    \"\"\"Scale x to zero",
+      "looped_fraction": 0.8495,
+      "distinct_ratio": 0.0703,
+      "acceptance_rate": 0.4316,
+      "tokens_per_second": 65.415,
+      "mean_accepted": 1.2949
+    },
+    {
+      "max_tokens": 512,
+      "category": "code",
+      "prompt": "for i in range(10):\n    print(",
+      "looped_fraction": 0.8772,
+      "distinct_ratio": 0.0508,
+      "acceptance_rate": 0.4855,
+      "tokens_per_second": 68.771,
+      "mean_accepted": 1.4564
+    },
+    {
+      "max_tokens": 512,
+      "category": "math",
+      "prompt": "To solve the equation 2x + 5 = 13, we first subtract 5 from ",
+      "looped_fraction": 0.5782,
+      "distinct_ratio": 0.1211,
+      "acceptance_rate": 0.6563,
+      "tokens_per_second": 79.072,
+      "mean_accepted": 1.969
+    },
+    {
+      "max_tokens": 512,
+      "category": "math",
+      "prompt": "The derivative of x^3 with respect to x is",
+      "looped_fraction": 0.2653,
+      "distinct_ratio": 0.2949,
+      "acceptance_rate": 0.57,
+      "tokens_per_second": 74.52,
+      "mean_accepted": 1.7101
+    },
+    {
+      "max_tokens": 512,
+      "category": "math",
+      "prompt": "If a triangle has sides of length 3, 4 and 5, then",
+      "looped_fraction": 0.7545,
+      "distinct_ratio": 0.0977,
+      "acceptance_rate": 0.451,
+      "tokens_per_second": 66.934,
+      "mean_accepted": 1.3529
+    },
+    {
+      "max_tokens": 512,
+      "category": "structured",
+      "prompt": "{\"name\": \"Ada Lovelace\", \"born\": 1815, \"known_for\":",
+      "looped_fraction": 0.0198,
+      "distinct_ratio": 0.4727,
+      "acceptance_rate": 0.2729,
+      "tokens_per_second": 56.252,
+      "mean_accepted": 0.8187
+    },
+    {
+      "max_tokens": 512,
+      "category": "structured",
+      "prompt": "| Country | Capital |\n| --- | --- |\n| France | Paris |\n| Jap",
+      "looped_fraction": 0.7228,
+      "distinct_ratio": 0.1191,
+      "acceptance_rate": 0.5185,
+      "tokens_per_second": 70.884,
+      "mean_accepted": 1.5556
+    },
+    {
+      "max_tokens": 512,
+      "category": "structured",
+      "prompt": "Ingredients:\n- 2 cups flour\n- 1 cup sugar\n-",
+      "looped_fraction": 0.8099,
+      "distinct_ratio": 0.0527,
+      "acceptance_rate": 0.3218,
+      "tokens_per_second": 59.207,
+      "mean_accepted": 0.9653
+    },
+    {
+      "max_tokens": 512,
+      "category": "technical",
+      "prompt": "The TCP three-way handshake begins when the client sends a S",
+      "looped_fraction": 0.0,
+      "distinct_ratio": 0.4922,
+      "acceptance_rate": 0.2368,
+      "tokens_per_second": 54.055,
+      "mean_accepted": 0.7105
+    },
+    {
+      "max_tokens": 512,
+      "category": "technical",
+      "prompt": "In a B-tree of order m, every internal node other than the r",
+      "looped_fraction": 0.2436,
+      "distinct_ratio": 0.3047,
+      "acceptance_rate": 0.3573,
+      "tokens_per_second": 61.221,
+      "mean_accepted": 1.0719
+    },
+    {
+      "max_tokens": 512,
+      "category": "technical",
+      "prompt": "Gradient descent converges to a local minimum provided the l",
+      "looped_fraction": 0.1327,
+      "distinct_ratio": 0.3105,
+      "acceptance_rate": 0.191,
+      "tokens_per_second": 51.616,
+      "mean_accepted": 0.5729
+    },
+    {
+      "max_tokens": 512,
+      "category": "dialogue",
+      "prompt": "\"I told you it would rain,\" she said. \"Did you bring\"",
+      "looped_fraction": 0.7624,
+      "distinct_ratio": 0.1055,
+      "acceptance_rate": 0.3804,
+      "tokens_per_second": 62.997,
+      "mean_accepted": 1.1411
+    },
+    {
+      "max_tokens": 512,
+      "category": "dialogue",
+      "prompt": "User: How do I reset my password?\nAssistant: To reset your p",
+      "looped_fraction": 0.6634,
+      "distinct_ratio": 0.1211,
+      "acceptance_rate": 0.6313,
+      "tokens_per_second": 77.492,
+      "mean_accepted": 1.8939
+    },
+    {
+      "max_tokens": 512,
+      "category": "dialogue",
+      "prompt": "\"Are you coming to the meeting?\"\n\"I can't,\" he replied, \"bec",
+      "looped_fraction": 0.9584,
+      "distinct_ratio": 0.0293,
+      "acceptance_rate": 0.5437,
+      "tokens_per_second": 72.435,
+      "mean_accepted": 1.6312
+    },
+    {
+      "max_tokens": 512,
+      "category": "reasoning",
+      "prompt": "All birds have feathers. A penguin is a bird. Therefore a pe",
+      "looped_fraction": 0.4297,
+      "distinct_ratio": 0.2148,
+      "acceptance_rate": 0.4636,
+      "tokens_per_second": 67.883,
+      "mean_accepted": 1.3907
+    },
+    {
+      "max_tokens": 512,
+      "category": "reasoning",
+      "prompt": "If it takes 5 machines 5 minutes to make 5 widgets, then 100",
+      "looped_fraction": 0.0792,
+      "distinct_ratio": 0.2012,
+      "acceptance_rate": 0.4865,
+      "tokens_per_second": 69.066,
+      "mean_accepted": 1.4595
+    },
+    {
+      "max_tokens": 512,
+      "category": "reasoning",
+      "prompt": "Alice is taller than Bob, and Bob is taller than Carol. The ",
+      "looped_fraction": 0.695,
+      "distinct_ratio": 0.1406,
+      "acceptance_rate": 0.5508,
+      "tokens_per_second": 72.488,
+      "mean_accepted": 1.6525
+    },
+    {
+      "max_tokens": 512,
+      "category": "high_entropy",
+      "prompt": "qx7 zephyr blorp 44 tangent mauve",
+      "looped_fraction": 0.9941,
+      "distinct_ratio": 0.0059,
+      "acceptance_rate": 0.9528,
+      "tokens_per_second": 96.809,
+      "mean_accepted": 2.8585
+    },
+    {
+      "max_tokens": 512,
+      "category": "high_entropy",
+      "prompt": "The seventeenth ingredient on the unlabelled jar read",
+      "looped_fraction": 0.5881,
+      "distinct_ratio": 0.0938,
+      "acceptance_rate": 0.3512,
+      "tokens_per_second": 61.269,
+      "mean_accepted": 1.0536
+    },
+    {
+      "max_tokens": 512,
+      "category": "high_entropy",
+      "prompt": "Random words: carpet, velocity, plum, ardent,",
+      "looped_fraction": 0.9168,
+      "distinct_ratio": 0.041,
+      "acceptance_rate": 0.6772,
+      "tokens_per_second": 80.756,
+      "mean_accepted": 2.0315
+    }
+  ],
+  "pooled_r_loop_vs_acceptance": 0.5391
+}

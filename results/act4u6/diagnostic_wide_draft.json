@@ -1,0 +1,367 @@
+{
+  "gate": "U6-1",
+  "provenance": {
+    "timestamp": "2026-09-14T13:02:19",
+    "commit": "1640c42240f5962ccea3624d90846ab9ab7fdafb",
+    "branch": "rprm-diffusion-stage1",
+    "dirty": false,
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "mlx": "0.32.1",
+    "model": "unsloth/Qwen3.5-4B-Base"
+  },
+  "adapter": "runs/u4b1/step-16000/adapter.safetensors",
+  "adapter_sha256": "8200c339d3d47363a3920fc4aca58f3535fc8bf75be431e35204f374700a4f42",
+  "backbone_digest_before": "7cd0f5a9bce55681729d390a530630b6fc8ae8c5e683ca4f417532895759e097",
+  "backbone_digest_after": "7cd0f5a9bce55681729d390a530630b6fc8ae8c5e683ca4f417532895759e097",
+  "backbone_unchanged": true,
+  "contexts": 256,
+  "context_tokens": 64,
+  "widths": [
+    4,
+    6,
+    8,
+    16
+  ],
+  "noise_stream_seed": 20260905,
+  "summary": {
+    "D4_decoder": {
+      "mean_prefix4": 0.859375,
+      "slot_agreement_with_target": [
+        0.984375,
+        0.54296875,
+        0.3125,
+        0.23828125
+      ],
+      "p1_equals_target": 0.984375,
+      "mean_top1": [
+        0.5402746636573283,
+        0.41113740939908894,
+        0.37402858513814863,
+        0.35386161061614985
+      ],
+      "identical_to_d4_same_condition": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "mean_max_abs_logit_diff_vs_d4": [
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    "D4_aligned": {
+      "mean_prefix4": 0.87890625,
+      "slot_agreement_with_target": [
+        0.984375,
+        0.55078125,
+        0.32421875,
+        0.23046875
+      ],
+      "p1_equals_target": 0.984375,
+      "mean_top1": [
+        0.5402746636573283,
+        0.4210827372808126,
+        0.37161545830895193,
+        0.35284953223890625
+      ],
+      "identical_to_d4_same_condition": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "mean_max_abs_logit_diff_vs_d4": [
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    "D4_redraw": {
+      "mean_prefix4": 0.859375,
+      "slot_agreement_with_target": [
+        0.984375,
+        0.54296875,
+        0.33203125,
+        0.2265625
+      ],
+      "p1_equals_target": 0.984375,
+      "mean_top1": [
+        0.5402746636573283,
+        0.4204243855565437,
+        0.37099094908626284,
+        0.3533151987066958
+      ],
+      "identical_to_d4_same_condition": [
+        1.0,
+        0.875,
+        0.8203125,
+        0.80078125
+      ],
+      "mean_max_abs_logit_diff_vs_d4": [
+        0.0,
+        1.5248926877975464,
+        2.155158281326294,
+        2.4417805671691895
+      ]
+    },
+    "D6_decoder": {
+      "mean_prefix4": 0.84765625,
+      "slot_agreement_with_target": [
+        0.98046875,
+        0.53515625,
+        0.31640625,
+        0.23828125
+      ],
+      "p1_equals_target": 0.98046875,
+      "mean_top1": [
+        0.539514658627013,
+        0.41636903242761036,
+        0.3694993005337892,
+        0.35524335550144315
+      ],
+      "identical_to_d4_same_condition": [
+        0.9921875,
+        0.890625,
+        0.84765625,
+        0.76171875
+      ],
+      "mean_max_abs_logit_diff_vs_d4": [
+        0.13624048233032227,
+        1.3802961707115173,
+        2.056962251663208,
+        2.4609124660491943
+      ]
+    },
+    "D6_aligned": {
+      "mean_prefix4": 0.875,
+      "slot_agreement_with_target": [
+        0.98046875,
+        0.54296875,
+        0.328125,
+        0.2265625
+      ],
+      "p1_equals_target": 0.98046875,
+      "mean_top1": [
+        0.539514658627013,
+        0.42049591366230743,
+        0.3730271974054631,
+        0.3525297022424638
+      ],
+      "identical_to_d4_same_condition": [
+        0.9921875,
+        0.98828125,
+        0.98046875,
+        0.97265625
+      ],
+      "mean_max_abs_logit_diff_vs_d4": [
+        0.13624048233032227,
+        0.14641404151916504,
+        0.15475797653198242,
+        0.1516563892364502
+      ]
+    },
+    "D8_decoder": {
+      "mean_prefix4": 0.8828125,
+      "slot_agreement_with_target": [
+        0.98046875,
+        0.546875,
+        0.3359375,
+        0.23828125
+      ],
+      "p1_equals_target": 0.98046875,
+      "mean_top1": [
+        0.539514658627013,
+        0.415868977928767,
+        0.3721406636177562,
+        0.353736318211304
+      ],
+      "identical_to_d4_same_condition": [
+        0.9921875,
+        0.875,
+        0.8203125,
+        0.7421875
+      ],
+      "mean_max_abs_logit_diff_vs_d4": [
+        0.13624048233032227,
+        1.4479055404663086,
+        2.1111037731170654,
+        2.325928211212158
+      ]
+    },
+    "D8_aligned": {
+      "mean_prefix4": 0.875,
+      "slot_agreement_with_target": [
+        0.98046875,
+        0.54296875,
+        0.328125,
+        0.2265625
+      ],
+      "p1_equals_target": 0.98046875,
+      "mean_top1": [
+        0.539514658627013,
+        0.42049591366230743,
+        0.3730271974054631,
+        0.3525297022424638
+      ],
+      "identical_to_d4_same_condition": [
+        0.9921875,
+        0.98828125,
+        0.98046875,
+        0.97265625
+      ],
+      "mean_max_abs_logit_diff_vs_d4": [
+        0.13624048233032227,
+        0.14641404151916504,
+        0.15475797653198242,
+        0.1516563892364502
+      ]
+    },
+    "D16_decoder": {
+      "mean_prefix4": 0.86328125,
+      "slot_agreement_with_target": [
+        0.98046875,
+        0.54296875,
+        0.328125,
+        0.2265625
+      ],
+      "p1_equals_target": 0.98046875,
+      "mean_top1": [
+        0.5406901152637147,
+        0.4198285801685415,
+        0.37038372829556465,
+        0.34574364723812323
+      ],
+      "identical_to_d4_same_condition": [
+        0.99609375,
+        0.87890625,
+        0.81640625,
+        0.77734375
+      ],
+      "mean_max_abs_logit_diff_vs_d4": [
+        0.13207733631134033,
+        1.4306702613830566,
+        1.9566833972930908,
+        2.253279685974121
+      ]
+    },
+    "D16_aligned": {
+      "mean_prefix4": 0.87890625,
+      "slot_agreement_with_target": [
+        0.98046875,
+        0.546875,
+        0.328125,
+        0.23046875
+      ],
+      "p1_equals_target": 0.98046875,
+      "mean_top1": [
+        0.5406901152637147,
+        0.4199959039251553,
+        0.3722239901399007,
+        0.35365358780836686
+      ],
+      "identical_to_d4_same_condition": [
+        0.99609375,
+        0.984375,
+        0.98828125,
+        0.98046875
+      ],
+      "mean_max_abs_logit_diff_vs_d4": [
+        0.13207733631134033,
+        0.1541309356689453,
+        0.16202378273010254,
+        0.16086196899414062
+      ]
+    }
+  },
+  "prefix4_delta_vs_d4": {
+    "D6_decoder": {
+      "n": 256,
+      "mean_diff": -0.011719,
+      "paired_se": 0.025655,
+      "ci_low": -0.0625,
+      "ci_high": 0.035156,
+      "p_positive": 0.2912,
+      "significant": false,
+      "wins": 10,
+      "losses": 13
+    },
+    "D6_aligned": {
+      "n": 256,
+      "mean_diff": -0.003906,
+      "paired_se": 0.006775,
+      "ci_low": -0.019531,
+      "ci_high": 0.007812,
+      "p_positive": 0.1776,
+      "significant": false,
+      "wins": 1,
+      "losses": 2
+    },
+    "D8_decoder": {
+      "n": 256,
+      "mean_diff": 0.023438,
+      "paired_se": 0.02471,
+      "ci_low": -0.027344,
+      "ci_high": 0.070312,
+      "p_positive": 0.8108,
+      "significant": false,
+      "wins": 17,
+      "losses": 11
+    },
+    "D8_aligned": {
+      "n": 256,
+      "mean_diff": -0.003906,
+      "paired_se": 0.006775,
+      "ci_low": -0.019531,
+      "ci_high": 0.007812,
+      "p_positive": 0.1776,
+      "significant": false,
+      "wins": 1,
+      "losses": 2
+    },
+    "D16_decoder": {
+      "n": 256,
+      "mean_diff": 0.003906,
+      "paired_se": 0.023154,
+      "ci_low": -0.039062,
+      "ci_high": 0.050781,
+      "p_positive": 0.5349,
+      "significant": false,
+      "wins": 14,
+      "losses": 15
+    },
+    "D16_aligned": {
+      "n": 256,
+      "mean_diff": 0.0,
+      "paired_se": 0.005535,
+      "ci_low": -0.011719,
+      "ci_high": 0.011719,
+      "p_positive": 0.3498,
+      "significant": false,
+      "wins": 1,
+      "losses": 1
+    },
+    "redraw_D4": {
+      "n": 256,
+      "mean_diff": 0.0,
+      "paired_se": 0.023483,
+      "ci_low": -0.046875,
+      "ci_high": 0.046875,
+      "p_positive": 0.4574,
+      "significant": false,
+      "wins": 13,
+      "losses": 14
+    }
+  },
+  "gate_result": {
+    "rule": "Variant 1 stays alive only if some D in {6,8,16} has a paired 95% CI on prefix4(D)-prefix4(4) (decoder noise) with lower bound > 0 and a mean greater than |mean redraw difference|.",
+    "widths_passing": [],
+    "variant1_alive": false,
+    "verdict": "VARIANT 1 KILLED"
+  },
+  "seconds": 140.4
+}

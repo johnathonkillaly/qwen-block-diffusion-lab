@@ -1,5 +1,8 @@
 # Research questions
 
+> Covers Acts I–III. From Act IV on, see [docs/RESULTS_INDEX.md](docs/RESULTS_INDEX.md) and
+> [docs/PROJECT_SUMMARY_THROUGH_U6.md](docs/PROJECT_SUMMARY_THROUGH_U6.md).
+
 Live tracker. Each question carries a status, the evidence, and what would move it.
 Status vocabulary: **open** (no evidence), **partial** (evidence from a memorisation
 test only), **answered** (evidence I would defend), **blocked**.

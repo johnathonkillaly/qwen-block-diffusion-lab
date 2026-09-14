@@ -1,0 +1,326 @@
+{
+  "shared_start": {
+    "path": "/Users/johnathonkillaly/code/diffusion-u5/runs/u4a/step-12800",
+    "exists": true,
+    "step": 12800,
+    "config_hash": "846fa021a8294cbe6d69a1af31b6445380ea801d88447325beb3f1bd183443a6",
+    "block_size": 4,
+    "seed": 20260903,
+    "data_position": {
+      "train": {
+        "seed": 20260903,
+        "batch_size": 4,
+        "num_windows": 4000,
+        "draws": 12800,
+        "cursor": 3200,
+        "order_digest": 17472
+      },
+      "val": {
+        "seed": 20260904,
+        "batch_size": 4,
+        "num_windows": 64,
+        "draws": 1016,
+        "cursor": 32,
+        "order_digest": 272
+      }
+    },
+    "rng": {
+      "seed": 20260903,
+      "streams": {
+        "train_noise": "0x6968999e92c72a55",
+        "train_corruption_rate": "0xda04fb4075c7d48a",
+        "eval_noise": "0x130e775f61ea0c92",
+        "eval_sampling": "0xb834d8602d137cf2",
+        "data_sampling": "0xd810757008c58a8b",
+        "bench_noise": "0x0ac88c86b1050400"
+      }
+    },
+    "optimizer_tensors": 514,
+    "adapter": {
+      "file_sha256": "8332986b8a411f589f8f05d2a2f067a60ae7d7e34d8c2261ec22a89ac5460750",
+      "bytes": 84966094,
+      "num_tensors": 256,
+      "combined": "35ac2d460b7eeefbbb38e49625d7f5ae9a02a64227e820c4d5f16fd168463858"
+    },
+    "optimizer": {
+      "file_sha256": "e93eabcb67e9ed1202a21ba2265a21161e6b83d7710518dda25dbc16d0a5da7e",
+      "bytes": 169933846,
+      "num_tensors": 514,
+      "combined": "4c52eb200e5890eb161421f5a496becf1b44f9963fe7e4ce555d4ef3be11d3c0"
+    }
+  },
+  "arms": {
+    "A_k4": {
+      "path": "/Users/johnathonkillaly/code/diffusion-u5/runs/u5/A_k4/step-16000",
+      "exists": true,
+      "step": 16000,
+      "config_hash": "d690884d09937604629ef2c3c461838c3dd817a792e38aad4d20c38ec764f046",
+      "block_size": 4,
+      "seed": 20260903,
+      "data_position": {
+        "train": {
+          "seed": 20260903,
+          "batch_size": 4,
+          "num_windows": 4000,
+          "draws": 16000,
+          "cursor": 4000,
+          "order_digest": 18908
+        },
+        "val": {
+          "seed": 20260904,
+          "batch_size": 4,
+          "num_windows": 64,
+          "draws": 1264,
+          "cursor": 64,
+          "order_digest": 291
+        }
+      },
+      "rng": {
+        "seed": 20260903,
+        "streams": {
+          "train_noise": "0x6968999e92c72a55",
+          "train_corruption_rate": "0xda04fb4075c7d48a",
+          "eval_noise": "0x130e775f61ea0c92",
+          "eval_sampling": "0xb834d8602d137cf2",
+          "data_sampling": "0xd810757008c58a8b",
+          "bench_noise": "0x0ac88c86b1050400"
+        }
+      },
+      "optimizer_tensors": 514,
+      "adapter": {
+        "file_sha256": "177f4b0c858c6ce2de8c9231743a6d17afefa689a56fe3ed3263ed5acadb43fb",
+        "bytes": 84966094,
+        "num_tensors": 256,
+        "combined": "14202b49190aff56ad5803363a57ed63104c98ff2dae79deca60920155c44608"
+      },
+      "optimizer": {
+        "file_sha256": "e6d9a3b5a0f07ad50f786efb4ddaea30c42697fca015bf3d3fa1a76e2aa07c84",
+        "bytes": 169933846,
+        "num_tensors": 514,
+        "combined": "52ce64949f0f724c764e473e81c81091afdeea7ca04b6a8815aaaec7ae4507d2"
+      }
+    },
+    "A_k4_r2": {
+      "path": "/Users/johnathonkillaly/code/diffusion-u5/runs/u5/A_k4_r2/step-16000",
+      "exists": true,
+      "step": 16000,
+      "config_hash": "d690884d09937604629ef2c3c461838c3dd817a792e38aad4d20c38ec764f046",
+      "block_size": 4,
+      "seed": 20260903,
+      "data_position": {
+        "train": {
+          "seed": 20260903,
+          "batch_size": 4,
+          "num_windows": 4000,
+          "draws": 16000,
+          "cursor": 4000,
+          "order_digest": 18908
+        },
+        "val": {
+          "seed": 20260904,
+          "batch_size": 4,
+          "num_windows": 64,
+          "draws": 1264,
+          "cursor": 64,
+          "order_digest": 291
+        }
+      },
+      "rng": {
+        "seed": 20260903,
+        "streams": {
+          "train_noise": "0x6968999e92c72a55",
+          "train_corruption_rate": "0xda04fb4075c7d48a",
+          "eval_noise": "0x130e775f61ea0c92",
+          "eval_sampling": "0xb834d8602d137cf2",
+          "data_sampling": "0xd810757008c58a8b",
+          "bench_noise": "0x0ac88c86b1050400"
+        }
+      },
+      "optimizer_tensors": 514,
+      "adapter": {
+        "file_sha256": "5958319aaaa5f7ac3b814fa72f429741779752612002dfd1a9a614d9e4feaeb2",
+        "bytes": 84966094,
+        "num_tensors": 256,
+        "combined": "98ca42c286c1dd1753e2e3337d9ba8cd858996e780950ff36e5d5a8f4e859535"
+      },
+      "optimizer": {
+        "file_sha256": "5d29b45e34bdf1356faed669228f433249af4f08436e95eb7186692fc2d3c1cc",
+        "bytes": 169933846,
+        "num_tensors": 514,
+        "combined": "139e5d0de25273a1d161c95adf39729ecb0f778ccb8a38c84a1cdf67602016a0"
+      }
+    },
+    "A_k4_r3": {
+      "path": "/Users/johnathonkillaly/code/diffusion-u5/runs/u5/A_k4_r3/step-16000",
+      "exists": true,
+      "step": 16000,
+      "config_hash": "d690884d09937604629ef2c3c461838c3dd817a792e38aad4d20c38ec764f046",
+      "block_size": 4,
+      "seed": 20260903,
+      "data_position": {
+        "train": {
+          "seed": 20260903,
+          "batch_size": 4,
+          "num_windows": 4000,
+          "draws": 16000,
+          "cursor": 4000,
+          "order_digest": 18908
+        },
+        "val": {
+          "seed": 20260904,
+          "batch_size": 4,
+          "num_windows": 64,
+          "draws": 1264,
+          "cursor": 64,
+          "order_digest": 291
+        }
+      },
+      "rng": {
+        "seed": 20260903,
+        "streams": {
+          "train_noise": "0x6968999e92c72a55",
+          "train_corruption_rate": "0xda04fb4075c7d48a",
+          "eval_noise": "0x130e775f61ea0c92",
+          "eval_sampling": "0xb834d8602d137cf2",
+          "data_sampling": "0xd810757008c58a8b",
+          "bench_noise": "0x0ac88c86b1050400"
+        }
+      },
+      "optimizer_tensors": 514,
+      "adapter": {
+        "file_sha256": "a55cce21b435f5947fbb9a0f01efd8b295e6a6a8c4cf7d523a0eb0adec07b30c",
+        "bytes": 84966094,
+        "num_tensors": 256,
+        "combined": "d2f003983c330d1e9b73d6708cdec9c3e024e089896a7983ac33b769b1cb3aee"
+      },
+      "optimizer": {
+        "file_sha256": "8b57a8cd060093c35148bc0eb9472385b61d0a0e6b5176c4897156fa59992480",
+        "bytes": 169933846,
+        "num_tensors": 514,
+        "combined": "92b9b821253f3076a8efe70d1efd6856803fd4cd1f4ccefbab9544a35745c6b3"
+      }
+    },
+    "C_k8": {
+      "path": "/Users/johnathonkillaly/code/diffusion-u5/runs/u5/C_k8/step-16000",
+      "exists": true,
+      "step": 16000,
+      "config_hash": "2025641001d32a2e85668450daf41ada12222eec3cdae245ad87b62824e30fe3",
+      "block_size": 8,
+      "seed": 20260903,
+      "data_position": {
+        "train": {
+          "seed": 20260903,
+          "batch_size": 4,
+          "num_windows": 4000,
+          "draws": 16000,
+          "cursor": 4000,
+          "order_digest": 18908
+        },
+        "val": {
+          "seed": 20260904,
+          "batch_size": 4,
+          "num_windows": 64,
+          "draws": 1264,
+          "cursor": 64,
+          "order_digest": 291
+        }
+      },
+      "rng": {
+        "seed": 20260903,
+        "streams": {
+          "train_noise": "0x6968999e92c72a55",
+          "train_corruption_rate": "0xda04fb4075c7d48a",
+          "eval_noise": "0x130e775f61ea0c92",
+          "eval_sampling": "0xb834d8602d137cf2",
+          "data_sampling": "0xd810757008c58a8b",
+          "bench_noise": "0x0ac88c86b1050400"
+        }
+      },
+      "optimizer_tensors": 514,
+      "adapter": {
+        "file_sha256": "e38e960eb1b917e5d5289c78ec663475e32c2c8ca8f305da813f8f5908c527d7",
+        "bytes": 84966094,
+        "num_tensors": 256,
+        "combined": "7c1673d6f14ea9d9ebd1f4a7662e47e646ea299be6528fcd3f473dabc1e0cf01"
+      },
+      "optimizer": {
+        "file_sha256": "be504ae092c06d38f4198bca199691b6e65298d38bca84bce50b9b74a4dad3ea",
+        "bytes": 169933846,
+        "num_tensors": 514,
+        "combined": "0cfb9ce524fae4b2959db83a74a127897b77669b0349bf3fb72f915458b768fe"
+      }
+    },
+    "C_k8_r2": {
+      "path": "/Users/johnathonkillaly/code/diffusion-u5/runs/u5/C_k8_r2/step-16000",
+      "exists": true,
+      "step": 16000,
+      "config_hash": "2025641001d32a2e85668450daf41ada12222eec3cdae245ad87b62824e30fe3",
+      "block_size": 8,
+      "seed": 20260903,
+      "data_position": {
+        "train": {
+          "seed": 20260903,
+          "batch_size": 4,
+          "num_windows": 4000,
+          "draws": 16000,
+          "cursor": 4000,
+          "order_digest": 18908
+        },
+        "val": {
+          "seed": 20260904,
+          "batch_size": 4,
+          "num_windows": 64,
+          "draws": 1264,
+          "cursor": 64,
+          "order_digest": 291
+        }
+      },
+      "rng": {
+        "seed": 20260903,
+        "streams": {
+          "train_noise": "0x6968999e92c72a55",
+          "train_corruption_rate": "0xda04fb4075c7d48a",
+          "eval_noise": "0x130e775f61ea0c92",
+          "eval_sampling": "0xb834d8602d137cf2",
+          "data_sampling": "0xd810757008c58a8b",
+          "bench_noise": "0x0ac88c86b1050400"
+        }
+      },
+      "optimizer_tensors": 514,
+      "adapter": {
+        "file_sha256": "e2588a5c555934c7adddd4ff4ab9732631719b66a460575b8c9652d2a2f758b9",
+        "bytes": 84966094,
+        "num_tensors": 256,
+        "combined": "3b38eae4b2343cee9b0dfcf29b605de939641ffa7a29bcfade1da24027542f6a"
+      },
+      "optimizer": {
+        "file_sha256": "0767af416470ade181ea7d5972dffa4129060d0425bf762bf8a0df3944dc289c",
+        "bytes": 169933846,
+        "num_tensors": 514,
+        "combined": "777e7046b8298fcab9aa90cefccb38bd24f62855aed34343f4ace52d01c4af2c"
+      }
+    }
+  },
+  "divergence": [
+    {
+      "arm": "A_k4",
+      "diverged_from_start": true
+    },
+    {
+      "arm": "A_k4_r2",
+      "diverged_from_start": true
+    },
+    {
+      "arm": "A_k4_r3",
+      "diverged_from_start": true
+    },
+    {
+      "arm": "C_k8",
+      "diverged_from_start": true
+    },
+    {
+      "arm": "C_k8_r2",
+      "diverged_from_start": true
+    }
+  ]
+}

@@ -58,6 +58,11 @@ class UnoTrainConfig:
     # corruption
     noise_mode: str = "random_uniform"
     corruption: str = "uniform"  # "uniform" (Uno/SDAR) | "full" (matches inference)
+    #: Draw the draft-row corruption at this block width and keep the rightmost
+    #: `block_size - 1` columns, so arms at different `block_size` see identical noise
+    #: at every position they share. Act IV-U5 sets this to the largest block any arm
+    #: trains at; `None` reproduces U3/U4 exactly. See `teacher.build_uno_batch`.
+    noise_align_width: int | None = None
 
     # adapter
     lora_rank: int = 16
@@ -84,12 +89,23 @@ class UnoTrainConfig:
     def resolved_alpha(self) -> float:
         return 16.0 * self.lora_rank if self.lora_alpha is None else self.lora_alpha
 
-    def block_size_at(self, step: int) -> int:
+    def block_size_at(self, step: int, start_step: int = 0) -> int:
+        """The block size at absolute `step`, for a run that began at `start_step`.
+
+        Stages divide the run's *own* span into equal parts. Measuring progress from
+        step 0 instead would put a run resumed at 12,800 of 16,000 entirely inside the
+        final stage, so a `4 -> 6 -> 8` curriculum would silently train only at 8 --
+        a curriculum arm that is not a curriculum. IFM's stages are equal token
+        budgets (`uno_3epoch_curriculum.yaml`), which for a fixed sequence length and
+        batch size is equal steps.
+        """
         if not self.block_curriculum:
             return self.block_size
+        span = max(self.steps - start_step, 1)
+        progress = max(step - start_step, 0)
         stage = min(
             len(self.block_curriculum) - 1,
-            step * len(self.block_curriculum) // max(self.steps, 1),
+            progress * len(self.block_curriculum) // span,
         )
         return self.block_curriculum[stage]
 
@@ -142,6 +158,7 @@ def evaluate(
             corruption="full",
             shuffle_targets=config.shuffle_targets,
             key=mx.random.split(eval_key, num_batches)[index],
+            noise_align_width=config.noise_align_width,
         )
         teacher = mx.stop_gradient(
             model.ar_logits(batch.teacher_ids)[:, batch.supervised_slice, :]
@@ -285,7 +302,7 @@ def train_uno(
     start = time.perf_counter()
 
     for step in range(start_step, config.steps):
-        block_size = config.block_size_at(step)
+        block_size = config.block_size_at(step, start_step)
         windows = next(train_windows)
         batch = build_uno_batch(
             windows,
@@ -298,6 +315,7 @@ def train_uno(
             # Keyed on the step index, not on how many draws came before: this is what
             # makes a resumed run see the noise the uninterrupted run would have seen.
             key=stream_key(config.seed, TRAIN_NOISE, step),
+            noise_align_width=config.noise_align_width,
         )
         teacher_logits = mx.stop_gradient(
             model.ar_logits(batch.teacher_ids)[:, batch.supervised_slice, :]

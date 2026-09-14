@@ -84,6 +84,15 @@ Unsloth maintainers.
 redistributed here. Qwen3.5 is a product of the Qwen team / Alibaba. This project has
 no affiliation with them.
 
+**Released adapter.** One adapter trained by this project,
+`qwen3.5-4b-base-diffusion-drafter-u4b1-step16000.safetensors`, is distributed as a GitHub release
+asset (tag `diffusion-specdecode-v0.1`), not in git. It is an r=16 LoRA over the base model above. It was
+trained on windows of WikiText-103 (CC BY-SA 3.0, see below), with targets taken from the
+frozen base model's own output distribution. No separate licence is declared for the
+adapter file. Anyone redistributing it should consider the base model's licence and the
+training data's licence; this document does not settle how either applies to trained
+weights.
+
 Also referenced in earlier acts and not redistributed: `Qwen/Qwen3.5-0.8B`, and various
 local GGUF/MLX quantised exports used only as autoregressive inference references.
 
@@ -92,7 +101,7 @@ local GGUF/MLX quantised exports used only as autoregressive inference reference
 | dataset | revision | licence | use |
 |---|---|---|---|
 | `Salesforce/wikitext` `wikitext-2-raw-v1` | `b08601e04326c79dfdd32d625aee71d232d685c3` | CC BY-SA 3.0 | Act II Phase 3 held-out comparison |
-| `Salesforce/wikitext` `wikitext-103-raw-v1` | `b08601e04326c79dfdd32d625aee71d232d685c3` | CC BY-SA 3.0 | Act III transfer corpus |
+| `Salesforce/wikitext` `wikitext-103-raw-v1` | `b08601e04326c79dfdd32d625aee71d232d685c3` | CC BY-SA 3.0 | Act III transfer corpus; Act IV-U drafter training and all Act IV held-out evaluation |
 
 WikiText is derived from Wikipedia and carries CC BY-SA 3.0. **We do not redistribute
 it** — the user downloads it via `datasets` at run time, and no dataset content is

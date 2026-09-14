@@ -1,0 +1,528 @@
+{
+  "session": "results/act4u5/raw/eval_curve.json",
+  "control": "A_k4 at the same step",
+  "test": "criteria \u00a73: paired bootstrap (10,000 resamples, harness implementation) + floor",
+  "note": "The frozen curve session paired against A_k4@12800 (the shared start); this re-pairs the recorded per-prompt data against the matched control, which is what U5-1/3/4 specify.",
+  "any_gate_passed": false,
+  "significant_anywhere": [
+    {
+      "arm": "D_curr",
+      "step": 13200,
+      "metrics": [
+        "tok_s"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "arm": "B_k6",
+      "step": 13200,
+      "prefix": {
+        "point": -0.011649999999999938,
+        "ci": [
+          -0.136739,
+          0.079453
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": -0.005319999999999991,
+        "ci": [
+          -0.066183,
+          0.036646
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": -0.546787,
+        "ci": [
+          -2.5809,
+          1.518433
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "B_k6",
+      "step": 13600,
+      "prefix": {
+        "point": 0.011719999999999953,
+        "ci": [
+          -0.066452,
+          0.069191
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": 0.005319999999999991,
+        "ci": [
+          -0.042035,
+          0.037409
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": -0.30258,
+        "ci": [
+          -1.9242,
+          1.235287
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "B_k6",
+      "step": 14400,
+      "prefix": {
+        "point": -9.999999999998899e-05,
+        "ci": [
+          -0.098015,
+          0.119867
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": 0.016479999999999828,
+        "ci": [
+          -0.026083,
+          0.06629
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": 0.736867,
+        "ci": [
+          -1.11518,
+          2.68672
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "B_k6",
+      "step": 15200,
+      "prefix": {
+        "point": 0.01915,
+        "ci": [
+          -0.088738,
+          0.124607
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": 0.016100000000000003,
+        "ci": [
+          -0.027533,
+          0.059099
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": 0.483953,
+        "ci": [
+          -1.31098,
+          2.22668
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "B_k6",
+      "step": 16000,
+      "prefix": {
+        "point": 0.008550000000000058,
+        "ci": [
+          -0.107603,
+          0.101171
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": 0.016870000000000163,
+        "ci": [
+          -0.037233,
+          0.057091
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": 0.480353,
+        "ci": [
+          -1.484107,
+          2.35416
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "C_k8",
+      "step": 13200,
+      "prefix": {
+        "point": 0.06374000000000013,
+        "ci": [
+          -0.056027,
+          0.183486
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": 0.02725999999999984,
+        "ci": [
+          -0.03501,
+          0.084511
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": 0.74208,
+        "ci": [
+          -1.755347,
+          3.314967
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "C_k8",
+      "step": 13600,
+      "prefix": {
+        "point": 0.015429999999999944,
+        "ci": [
+          -0.094807,
+          0.093828
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": 0.016100000000000003,
+        "ci": [
+          -0.033417,
+          0.050811
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": -0.35118,
+        "ci": [
+          -2.085333,
+          1.376213
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "C_k8",
+      "step": 14400,
+      "prefix": {
+        "point": 0.03248999999999991,
+        "ci": [
+          -0.058776,
+          0.131699
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": 0.027679999999999927,
+        "ci": [
+          -0.013241,
+          0.067589
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": 0.360967,
+        "ci": [
+          -1.237307,
+          2.140467
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "C_k8",
+      "step": 15200,
+      "prefix": {
+        "point": 0.039020000000000055,
+        "ci": [
+          -0.014247,
+          0.116381
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": 0.021549999999999958,
+        "ci": [
+          -0.002765,
+          0.055434
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": 0.379107,
+        "ci": [
+          -0.744067,
+          1.645533
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "C_k8",
+      "step": 16000,
+      "prefix": {
+        "point": -0.04034000000000004,
+        "ci": [
+          -0.155464,
+          0.070821
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": -0.016479999999999828,
+        "ci": [
+          -0.073521,
+          0.035021
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": -1.564567,
+        "ci": [
+          -3.726813,
+          0.62812
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "D_curr",
+      "step": 13200,
+      "prefix": {
+        "point": -0.007699999999999929,
+        "ci": [
+          -0.089017,
+          0.03749
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": -0.005319999999999991,
+        "ci": [
+          -0.050385,
+          0.016575
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": -1.2649,
+        "ci": [
+          -2.756107,
+          -0.116227
+        ],
+        "significant": true,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "D_curr",
+      "step": 13600,
+      "prefix": {
+        "point": 0.007749999999999924,
+        "ci": [
+          -0.052699,
+          0.052873
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": 0.005319999999999991,
+        "ci": [
+          -0.028756,
+          0.028977
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": -0.60916,
+        "ci": [
+          -1.814507,
+          0.522893
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "D_curr",
+      "step": 14400,
+      "prefix": {
+        "point": -0.04359000000000002,
+        "ci": [
+          -0.116176,
+          0.049471
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": -0.010780000000000012,
+        "ci": [
+          -0.044663,
+          0.028537
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": -0.925327,
+        "ci": [
+          -2.38388,
+          0.577107
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "D_curr",
+      "step": 15200,
+      "prefix": {
+        "point": 0.047050000000000036,
+        "ci": [
+          -0.022732,
+          0.130269
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": 0.021549999999999958,
+        "ci": [
+          -0.012324,
+          0.055879
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": 0.19106,
+        "ci": [
+          -1.17986,
+          1.642213
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    },
+    {
+      "arm": "D_curr",
+      "step": 16000,
+      "prefix": {
+        "point": 0.0,
+        "ci": [
+          -0.145469,
+          0.149809
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tpf": {
+        "point": 0.0,
+        "ci": [
+          -0.074533,
+          0.069949
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "tok_s": {
+        "point": -0.70184,
+        "ci": [
+          -3.664593,
+          2.12686
+        ],
+        "significant": false,
+        "passes": false
+      },
+      "U5-1": false,
+      "U5-3": false,
+      "U5-4": false
+    }
+  ]
+}
