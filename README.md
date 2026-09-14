@@ -47,6 +47,10 @@ Source: [docs/RESULTS_SPECULATIVE.md](docs/RESULTS_SPECULATIVE.md).
 - **More denoising at inference.** Four refinement passes nearly triple the accepted prefix
   (1.07 → 2.78) and make decoding slower than no speculation at all (0.776× AR).
 - **Adaptive K.** No scheduler beat fixed K=4 (best 1.230× vs 1.238×).
+- **Decoupling draft width from verify width (Act IV-U6).** Verifying a wide draft in
+  stages commits exactly the tokens a coupled wide decoder commits, and every extra verify
+  forward costs ~20 ms fixed on this stack. Every staged configuration was slower than K=4
+  (−1.6% to −9.0%), and a wider canvas does not change the first draft slots at all.
 - **Long context.** Decode-only speedup falls from 1.44× at 512 tokens of context to 1.12× at
   16K. 24 of 32 layers keep constant-size recurrent state, so native decoding barely slows
   with context, while the verify pass does.
@@ -104,6 +108,7 @@ helps" rested on a single launch and did not survive Act IV-U5.
 | RPRM Stage 1 | Does denoiser uncertainty justify early exit? | **STOP** | [RPRM results](RPRM_DIFFUSION_STAGE1_RESULTS.md) |
 | Act IV-S | The speculative decoder: K sweep, correctness, controls, context, adaptive K | `K=4 STANDS. ADAPTIVE K FAILS. TWO OF THE APPARENT WINS WERE ARTIFACTS.` (1.245×) | [RESULTS_SPECULATIVE](docs/RESULTS_SPECULATIVE.md) |
 | Act IV-U5 | Does longer-horizon training make a better K=4 drafter? | `U4 OBSERVATION WAS NOISE` (and no cross-horizon transfer) | [act4u5_results](docs/act4u5_results.md) |
+| Act IV-U6 | Does decoupling draft width from verify width speed up the decoder? | `VERIFY COST DOMINATES` (every staged arm −1.6% to −9.0% vs K=4) | [act4u6_results](docs/act4u6_results.md) |
 
 Further reading:
 * the story in a few pages: [docs/PROJECT_SUMMARY_THROUGH_U5.md](docs/PROJECT_SUMMARY_THROUGH_U5.md);
@@ -159,6 +164,8 @@ Rebuilds the RPRM analysis.
 | Act IV-U5, primary run (~8 h) | `scripts/u5_launch.sh` |
 | Act IV-U5, replicate launches and supplementary session (~4.5 h) | `scripts/u5_replicates.sh` |
 | Act IV-U5, cacheless losslessness | `scripts/u5_losslessness.py` |
+| Act IV-U6 diagnostic, cost curve, calibration/pilot/decisive runs | `scripts/u6_wide_draft_diagnostic.py`, `u6_cost_curve.py`, `u6_bench.py` |
+| Act IV-U6 scoring and plots (no model) | `scripts/u6_report.py final --floor 1.0` |
 | Act IV-U…U4 training and evaluation | `scripts/uno.py` (`train`, `u3-eval`, `u4-eval`, `u5-eval`, …) |
 | Act III | `qdif act3-train -c configs/act3_main.yaml` |
 | Five-minute smoke test | `scripts/reproduce_smoke.sh` |
@@ -171,7 +178,7 @@ Tests (2026-09-14):
 
 | test group | result |
 |---|---|
-| `pytest -m "not model"` | 436 passed |
+| `pytest -m "not model"` | 492 passed |
 | MLX model tests (`tests/test_act3.py`, `tests/test_bidirectional_deltanet.py`) | 45 passed |
 | legacy torch path (`tests/test_model_integration.py`) | 19 pre-existing failures, from a `transformers` version mismatch, documented in `AGENTS.md` |
 
@@ -179,10 +186,10 @@ Tests (2026-09-14):
 
 ## Status
 
-**Experimental research, not a production inference engine.** Act IV-U5 is closed.
-Planned next: **Act IV-U6**, which asks whether decoupling the drafter's width from the
-verifier's width helps the actual decoder. It uses the same frozen drafter and trains
-nothing.
+**Experimental research, not a production inference engine.** Act IV-U6 is closed:
+decoupling the drafter's width from the verifier's width did not help
+(`VERIFY COST DOMINATES`), and the coupled K=4 decoder remains the frontier. The measured
+lever is now the fixed cost of a forward pass (about 20 ms of a 24.5 ms verify).
 
 ## Hardware
 

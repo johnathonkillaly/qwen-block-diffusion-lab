@@ -226,8 +226,9 @@ chosen and the evidence behind claims about training recipes.
 
 ## Open questions
 
-- **Does decoupling draft width from verify width help the actual decoder?** Act IV-U6,
-  frozen drafter, no training.
+- ~~Does decoupling draft width from verify width help the actual decoder?~~ Answered after
+  this checkpoint by Act IV-U6: no, `VERIFY COST DOMINATES`
+  ([act4u6_results.md](act4u6_results.md)).
 - Would a width-invariant target argmax (fp32 logits, or tie-breaking by token id) give true
   byte-identity, and at what cost?
 - What makes training launches diverge on MLX/Metal? Any future training comparison needs

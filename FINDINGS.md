@@ -327,6 +327,28 @@ the other side of the control (+0.072 against the original's −0.023). Verdict
 prefix, so a true effect smaller than that is not excluded. See
 [docs/act4u5_results.md](docs/act4u5_results.md).
 
+**Decoupling draft width from verify width does not help on this stack (Act IV-U6).** On
+the frozen Act IV-S drafter, four preregistered staged configurations ran against K=4,
+paired over 81 units. They all committed more tokens per cycle and all were slower:
+
+| config | vs K=4 [95% CI] |
+|---|---|
+| S(6,4) | −1.58% [−2.89, −0.36] |
+| S(8,4) | −1.61% [−3.10, −0.17] |
+| S(6,3) | −3.03% [−4.28, −1.91] |
+| S(8,2) | −9.01% [−10.58, −7.51] |
+
+The reason is mechanical:
+* **At a fixed draft width, staging commits exactly what a coupled wide decoder commits.**
+  Per-cycle commits were identical across verify widths on 81/81 units.
+* **A verify forward costs 20.1 ms fixed plus 0.80 ms per token on the M4 Max**, so
+  verifying 2 twice costs 45.1 ms against 24.5 ms for 4 once.
+* **A wider draft canvas does not change the first draft slots.** The draft pass is causal,
+  and slots 1–4 differ across widths no more than a noise re-draw makes them differ.
+
+Verdict `VERIFY COST DOMINATES`, with every preregistered prediction within half a point.
+See [docs/act4u6_results.md](docs/act4u6_results.md).
+
 **One-batch overfit saturates at 4B and cannot rank mechanisms.** At 0.8B it
 discriminated; at 4B both the causal and bidirectional configs hit loss ~1e-4 and 100%
 corrupted-position accuracy. It is a plumbing check, not a benchmark.
@@ -418,3 +440,6 @@ For the Act IV-U (Uno) track, after U4:
    least three launches per arm and more than 15 evaluation prompts. U5's paired
    intervals (±0.10 prefix) and launch spread (0.05–0.10) are both larger than every
    training effect Act IV-U has chased.
+10. ~~**Decouple draft width from verify width.**~~ **Tested in Act IV-U6:
+    `VERIFY COST DOMINATES`.** The open lever is the fixed ~20 ms cost of a forward on this
+    stack: how much of it is Python and Metal dispatch rather than model compute?

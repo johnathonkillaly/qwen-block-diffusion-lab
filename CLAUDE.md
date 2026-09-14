@@ -12,10 +12,11 @@ Four things worth knowing before you touch anything:
    the structured-noise alphabet (`configs/act4/`, `mlx_backend/act4*.py`,
    `docs/ACT4_CRITERIA.md` — UPPERCASE), paused at "ready to run Stage 2". `Act IV-U`
    is the Uno diffusion-distillation track (`src/qdif/uno/`, `scripts/uno.py`,
-   `docs/act4u*_*.md`), which is the active one. It has five phases: `U` (Uno
+   `docs/act4u*_*.md`), which is the active one. It has six phases: `U` (Uno
    reproduction), `U2` (transactional recurrent verification), `U3` (acceptance
    scaling), `U4` (horizon scaling) and `U5` (training-horizon transfer — complete, verdict
-   `U4 OBSERVATION WAS NOISE`). `Act IV-S` evaluated the speculative decoder itself (K=4,
+   `U4 OBSERVATION WAS NOISE`) and `U6` (decoupled draft/verify width — complete,
+   `VERIFY COST DOMINATES`). `Act IV-S` evaluated the speculative decoder itself (K=4,
    about 1.23–1.25× native AR, greedy, exact up to bf16 ties). They share no code with Act IV-N. `RPRM`
    (`RPRM_DIFFUSION_*.md` at repo root, `scripts/rprm_stage1_*.py`) is a third,
    completed, unrelated track: a denoiser-uncertainty early-exit test run on top of

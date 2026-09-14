@@ -26,6 +26,7 @@ never in git; their SHA-256 digests are in `results/checkpoint_manifest.json` (�
 | RPRM Stage 1 | 2026-09-08 | Does denoiser uncertainty justify adaptive early exit? | **STOP** | [../RPRM_DIFFUSION_STAGE1_RESULTS.md](../RPRM_DIFFUSION_STAGE1_RESULTS.md), [prereg](../RPRM_DIFFUSION_PREREG.md) | `results/rprm_stage1/` | — | `runs/u4b2-k8/step-16000` (primary), `runs/uno-k4-true` (replication) |
 | Act IV-S | 2026-09-13 | The speculative decoder: baseline, K sweep, correctness, controls, context, adaptive K | `K=4 STANDS. ADAPTIVE K FAILS. TWO OF THE APPARENT WINS WERE ARTIFACTS.` | [RESULTS_SPECULATIVE.md](RESULTS_SPECULATIVE.md), [design](SPECULATIVE_DESIGN.md), [state recovery](STATE_RECOVERY.md) | `results/speculative/` (raw rows, CSVs, divergence audits), `plots/speculative/` | `runs/spec-*.log` | `runs/u4b1/step-16000` (frozen) |
 | Act IV-U5 | 2026-09-13 (run), 2026-09-14 (scored) | Does longer-horizon training make a better K=4 drafter? | `U4 OBSERVATION WAS NOISE`; `NO CROSS-HORIZON TRANSFER` also holds | [act4u5_results.md](act4u5_results.md), [criteria + A1–A4](act4u5_preregistered_criteria.md), [design](act4u5_design.md) | `results/act4u5/` (incl. `raw/`, `provenance/`) | `runs/u5/` | start `runs/u4a/step-12800`; arms `runs/u5/{A_k4,B_k6,C_k8,D_curr}/step-16000`; replicates `runs/u5/{A_k4_r2,A_k4_r3,C_k8_r2}/step-16000` |
+| Act IV-U6 | 2026-09-14 | Does decoupling draft width from verify width speed up the decoder? | `VERIFY COST DOMINATES` | [act4u6_results.md](act4u6_results.md), [criteria](act4u6_preregistered_criteria.md), [design](act4u6_design.md) | `results/act4u6/`, `plots/act4u6/` | `runs/u6-*.log` | `runs/u4b1/step-16000` (frozen) |
 
 ---
 
@@ -53,6 +54,11 @@ never in git; their SHA-256 digests are in `results/checkpoint_manifest.json` (�
 | U4 K=4 1.195×, K=8 0.910× K=4 | `results/act4u4/u4_summary.json` and CSVs |
 | U3 1.056× → 1.168× | `results/act4u3/u3_summary.json` and CSVs |
 | RPRM +0.022 AUROC | `results/rprm_stage1/analysis_primary.json` |
+| U6 staged arms −1.6% to −9.0% vs K=4 | `results/act4u6/u6_scores.json` → `arms`; raw rows `results/act4u6/decisive.json` |
+| U6 floor 1.0% | `results/act4u6/floor.json` (from `calibrate.json`) |
+| verify forward 20.1 ms + 0.80 ms/token | `results/act4u6/cost_curve.json` → `verify_fit_2_to_9` |
+| wider draft does not change slots 1–4 | `results/act4u6/diagnostic_wide_draft.json` |
+| staging commits identical per-cycle tokens across V | `results/act4u6/decisive.json` rows `committed_per_cycle` |
 
 Act I–III and Act IV-U/U2 numbers are backed by run directories in `runs/`, each with a
 `run_metadata.json` or equivalent. They were never committed; that is a gap for

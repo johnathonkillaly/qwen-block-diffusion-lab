@@ -166,7 +166,7 @@ HF_HOME=/Volumes/SHUTTLE PYTHONPATH=$PWD/src .../.venv-unsloth/bin/python -m pyt
 
 | set | result |
 |---|---|
-| `-m "not model"` (fast; must always pass) | **436 passed**, 40 deselected (2026-09-14) |
+| `-m "not model"` (fast; must always pass) | **492 passed**, 40 deselected (2026-09-14) |
 | MLX model tests | **45 passed** (2026-09-14) |
 | torch v0.1 (`test_model_integration.py`) | **19 failed, 9 passed — pre-existing** |
 
@@ -174,7 +174,8 @@ HF_HOME=/Volumes/SHUTTLE PYTHONPATH=$PWD/src .../.venv-unsloth/bin/python -m pyt
 `test_structured_noise_model.py` and its siblings are not in the working tree (this table
 once claimed 423 with them present). Act IV-S added 22 tests
 (`tests/test_uno_speculative.py`), 383 → 405. The Act IV-U5 supplementary rig added 31
-(`tests/test_uno_u5_replicates.py`), 405 → 436.
+(`tests/test_uno_u5_replicates.py`), 405 → 436. Act IV-U6 added 56
+(`tests/test_uno_decoupled.py`, `tests/test_uno_u6_report.py`), 436 → 492.
 
 The 19 torch failures are **not yours to fix unless asked**. `transformers 5.5.0` is
 installed but `pyproject.toml` declares `>=5.8`; upstream `masking_utils.py` now
@@ -250,10 +251,39 @@ actually published, tagged confirmed / inferred / our approximation),
 [`docs/act4u_preregistered_criteria.md`](docs/act4u_preregistered_criteria.md) (frozen),
 [`docs/act4u_results.md`](docs/act4u_results.md).
 
-**Status: Act IV-U..U5 and Act IV-S complete.** The short story is
+**Status: Act IV-U..U6 and Act IV-S complete.** The short story is
 [`docs/PROJECT_SUMMARY_THROUGH_U5.md`](docs/PROJECT_SUMMARY_THROUGH_U5.md). Every stage, report,
 raw-data directory and checkpoint is mapped in [`docs/RESULTS_INDEX.md`](docs/RESULTS_INDEX.md).
 Checkpoint digests are in `results/checkpoint_manifest.json`.
+
+### Complete — Act IV-U6: decouple draft width from verify width *(2026-09-14)*
+
+Inference scheduling on the frozen Act IV-S drafter (`runs/u4b1/step-16000`); nothing
+trained. Docs: [`docs/act4u6_design.md`](docs/act4u6_design.md),
+[`docs/act4u6_preregistered_criteria.md`](docs/act4u6_preregistered_criteria.md) (frozen,
+committed before any measurement), [`docs/act4u6_results.md`](docs/act4u6_results.md).
+Code: `src/qdif/uno/decoupled.py`, `scripts/u6_*.py`. Data: `results/act4u6/`,
+`plots/act4u6/`.
+
+**Verdict: `VERIFY COST DOMINATES`.** Every staged arm was slower than coupled K=4, with a
+paired CI entirely below zero: S(6,4) −1.58%, S(8,4) −1.61%, S(6,3) −3.03%, S(8,2) −9.01%.
+The truncate variant was killed before any wall-clock work.
+
+Three things worth not re-deriving:
+
+1. **A verify forward costs 20.1 ms fixed plus 0.80 ms per token on this stack**
+   (`results/act4u6/cost_curve.json`). Splitting verification multiplies the fixed part:
+   verifying 2 twice costs 45.1 ms, verifying 4 once costs 24.5 ms. Width 17 costs 62 ms,
+   a cliff past 13.
+2. **At fixed draft width, staging never changes what is committed.** Per-cycle commits
+   were identical across verify widths on 81/81 units. Staging is only a forward schedule
+   for a coupled K=D decoder's tokens.
+3. **The draft pass is causal, so a wider canvas cannot inform earlier slots.** Slots 1–4
+   differ across widths no more than a noise re-draw makes them differ. Do not revisit
+   truncation without a non-causal drafter.
+
+Measurement lesson: two *identical* incumbent arms had medians 2.3% apart and a paired
+mean 0.16% apart. Use paired means.
 
 ### Complete — Act IV-S: finishing the speculative decoder *(2026-09-13)*
 

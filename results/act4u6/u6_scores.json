@@ -1,0 +1,453 @@
+{
+  "source": "decisive.json",
+  "floor_percent": 1.0,
+  "floor_record": {
+    "units": 81,
+    "mean_incumbent_tok_s": 58.06508641975309,
+    "mean_diff_tok_s": 0.09179,
+    "ci_tok_s": [
+      -0.244173,
+      0.441827
+    ],
+    "raw_percent": 0.760916804301346,
+    "floor_percent": 1.0
+  },
+  "u6_0": {
+    "adapter_sha256": "8200c339d3d47363a3920fc4aca58f3535fc8bf75be431e35204f374700a4f42",
+    "backbone_unchanged": true,
+    "divergences": 210,
+    "beyond_one_ulp": 0
+  },
+  "u6_1": {
+    "rule": "Variant 1 stays alive only if some D in {6,8,16} has a paired 95% CI on prefix4(D)-prefix4(4) (decoder noise) with lower bound > 0 and a mean greater than |mean redraw difference|.",
+    "widths_passing": [],
+    "variant1_alive": false,
+    "verdict": "VARIANT 1 KILLED"
+  },
+  "u6_2": {
+    "arms": {
+      "incumbent_d4v4": {
+        "stage_widths": [
+          5
+        ],
+        "tokens": 5,
+        "ms": 51.105,
+        "tokens_per_ms": 0.09783855073711564
+      },
+      "staged_d8v4": {
+        "stage_widths": [
+          5,
+          4
+        ],
+        "tokens": 9,
+        "ms": 77.188,
+        "tokens_per_ms": 0.11659843498989479
+      },
+      "staged_d8v2": {
+        "stage_widths": [
+          3,
+          3,
+          3
+        ],
+        "tokens": 9,
+        "ms": 97.853,
+        "tokens_per_ms": 0.09197469673898603
+      },
+      "staged_d6v4": {
+        "stage_widths": [
+          5,
+          2
+        ],
+        "tokens": 7,
+        "ms": 74.325,
+        "tokens_per_ms": 0.0941815955707741
+      },
+      "staged_d6v3": {
+        "stage_widths": [
+          4,
+          3
+        ],
+        "tokens": 7,
+        "ms": 74.304,
+        "tokens_per_ms": 0.09420745288617989
+      }
+    },
+    "staged_beats_perfect_incumbent": {
+      "staged_d8v4": true,
+      "staged_d8v2": false,
+      "staged_d6v4": false,
+      "staged_d6v3": false
+    },
+    "staged_killed": false
+  },
+  "arms": {
+    "dec_d4v4": {
+      "spec": {
+        "name": "dec_d4v4",
+        "kind": "decoupled",
+        "draft": 4,
+        "verify": 4,
+        "staged": false
+      },
+      "tok_s": {
+        "units": 81,
+        "mean_incumbent_tok_s": 60.967592592592595,
+        "mean_arm_tok_s": 60.915851851851855,
+        "percent": -0.08486639835978434,
+        "ci_percent": [
+          -0.2473084364796112,
+          0.07224985951856631
+        ]
+      },
+      "tok_s_clean": {
+        "units": 48,
+        "mean_incumbent_tok_s": 60.216499999999996,
+        "mean_arm_tok_s": 60.149875,
+        "percent": -0.11064243189159119,
+        "ci_percent": [
+          -0.313487167138575,
+          0.08168525238099193
+        ]
+      },
+      "committed_per_cycle": {
+        "mean_diff": 0.0,
+        "ci": [
+          0.0,
+          0.0
+        ],
+        "units": 81,
+        "incumbent_mean": 3.0868689528201956,
+        "arm_mean": 3.0868689528201956
+      },
+      "accepted_per_cycle": {
+        "mean_diff": 0.0,
+        "ci": [
+          0.0,
+          0.0
+        ],
+        "units": 81,
+        "incumbent_mean": 1.1242254614232186,
+        "arm_mean": 1.1242254614232186
+      },
+      "added_verify_ms_per_cycle": 0.001101,
+      "added_draft_ms_per_cycle": 0.00829,
+      "beyond_one_ulp": 0,
+      "divergences": 36,
+      "passes": false,
+      "robust": false,
+      "lossless": true,
+      "wins": false
+    },
+    "staged_d8v4": {
+      "spec": {
+        "name": "staged_d8v4",
+        "kind": "decoupled",
+        "draft": 8,
+        "verify": 4,
+        "staged": true
+      },
+      "tok_s": {
+        "units": 81,
+        "mean_incumbent_tok_s": 60.967592592592595,
+        "mean_arm_tok_s": 59.98672839506173,
+        "percent": -1.6088284911534663,
+        "ci_percent": [
+          -3.095288693142987,
+          -0.16908327131900674
+        ]
+      },
+      "tok_s_clean": {
+        "units": 48,
+        "mean_incumbent_tok_s": 60.216499999999996,
+        "mean_arm_tok_s": 58.175000000000004,
+        "percent": -3.39026678734234,
+        "ci_percent": [
+          -5.313742910996155,
+          -1.8343875847981865
+        ]
+      },
+      "committed_per_cycle": {
+        "mean_diff": 0.167248,
+        "ci": [
+          0.070559,
+          0.281816
+        ],
+        "units": 81,
+        "incumbent_mean": 3.0868689528201956,
+        "arm_mean": 3.2541167470017873
+      },
+      "accepted_per_cycle": {
+        "mean_diff": 0.081266,
+        "ci": [
+          0.009126,
+          0.162338
+        ],
+        "units": 81,
+        "incumbent_mean": 1.1242254614232186,
+        "arm_mean": 1.2054915442750356
+      },
+      "added_verify_ms_per_cycle": 1.83707,
+      "added_draft_ms_per_cycle": 1.158215,
+      "beyond_one_ulp": 0,
+      "divergences": 36,
+      "passes": false,
+      "robust": false,
+      "lossless": true,
+      "wins": false
+    },
+    "staged_d8v2": {
+      "spec": {
+        "name": "staged_d8v2",
+        "kind": "decoupled",
+        "draft": 8,
+        "verify": 2,
+        "staged": true
+      },
+      "tok_s": {
+        "units": 81,
+        "mean_incumbent_tok_s": 60.967592592592595,
+        "mean_arm_tok_s": 55.47455555555556,
+        "percent": -9.00976529728909,
+        "ci_percent": [
+          -10.582853489255069,
+          -7.50876622370719
+        ]
+      },
+      "tok_s_clean": {
+        "units": 48,
+        "mean_incumbent_tok_s": 60.216499999999996,
+        "mean_arm_tok_s": 54.2490625,
+        "percent": -9.909969858759643,
+        "ci_percent": [
+          -12.203465827472536,
+          -7.862808366477628
+        ]
+      },
+      "committed_per_cycle": {
+        "mean_diff": 0.167248,
+        "ci": [
+          0.070559,
+          0.281816
+        ],
+        "units": 81,
+        "incumbent_mean": 3.0868689528201956,
+        "arm_mean": 3.2541167470017873
+      },
+      "accepted_per_cycle": {
+        "mean_diff": -0.222392,
+        "ci": [
+          -0.288353,
+          -0.151698
+        ],
+        "units": 81,
+        "incumbent_mean": 1.1242254614232186,
+        "arm_mean": 0.9018338672834897
+      },
+      "added_verify_ms_per_cycle": 5.974947,
+      "added_draft_ms_per_cycle": 1.149668,
+      "beyond_one_ulp": 0,
+      "divergences": 36,
+      "passes": false,
+      "robust": false,
+      "lossless": true,
+      "wins": false
+    },
+    "staged_d6v4": {
+      "spec": {
+        "name": "staged_d6v4",
+        "kind": "decoupled",
+        "draft": 6,
+        "verify": 4,
+        "staged": true
+      },
+      "tok_s": {
+        "units": 81,
+        "mean_incumbent_tok_s": 60.967592592592595,
+        "mean_arm_tok_s": 60.007345679012346,
+        "percent": -1.5750121649327966,
+        "ci_percent": [
+          -2.8924284607791027,
+          -0.36135427139494264
+        ]
+      },
+      "tok_s_clean": {
+        "units": 48,
+        "mean_incumbent_tok_s": 60.216499999999996,
+        "mean_arm_tok_s": 58.851124999999996,
+        "percent": -2.267443308727674,
+        "ci_percent": [
+          -4.378610513729626,
+          -0.4849866730879411
+        ]
+      },
+      "committed_per_cycle": {
+        "mean_diff": 0.111541,
+        "ci": [
+          0.047054,
+          0.180414
+        ],
+        "units": 81,
+        "incumbent_mean": 3.0868689528201956,
+        "arm_mean": 3.198410336150338
+      },
+      "accepted_per_cycle": {
+        "mean_diff": 0.026739,
+        "ci": [
+          -0.021792,
+          0.073744
+        ],
+        "units": 81,
+        "incumbent_mean": 1.1242254614232186,
+        "arm_mean": 1.1509647945219663
+      },
+      "added_verify_ms_per_cycle": 1.826381,
+      "added_draft_ms_per_cycle": 0.373162,
+      "beyond_one_ulp": 0,
+      "divergences": 33,
+      "passes": false,
+      "robust": false,
+      "lossless": true,
+      "wins": false
+    },
+    "staged_d6v3": {
+      "spec": {
+        "name": "staged_d6v3",
+        "kind": "decoupled",
+        "draft": 6,
+        "verify": 3,
+        "staged": true
+      },
+      "tok_s": {
+        "units": 81,
+        "mean_incumbent_tok_s": 60.967592592592595,
+        "mean_arm_tok_s": 59.12102469135802,
+        "percent": -3.028769747133419,
+        "ci_percent": [
+          -4.279849160908193,
+          -1.90678186650467
+        ]
+      },
+      "tok_s_clean": {
+        "units": 48,
+        "mean_incumbent_tok_s": 60.216499999999996,
+        "mean_arm_tok_s": 58.468250000000005,
+        "percent": -2.9032740195793516,
+        "ci_percent": [
+          -4.967181752509694,
+          -1.1902883761095382
+        ]
+      },
+      "committed_per_cycle": {
+        "mean_diff": 0.111541,
+        "ci": [
+          0.047054,
+          0.180414
+        ],
+        "units": 81,
+        "incumbent_mean": 3.0868689528201956,
+        "arm_mean": 3.198410336150338
+      },
+      "accepted_per_cycle": {
+        "mean_diff": -0.059416,
+        "ci": [
+          -0.10743,
+          -0.01436
+        ],
+        "units": 81,
+        "incumbent_mean": 1.1242254614232186,
+        "arm_mean": 1.0648091517681253
+      },
+      "added_verify_ms_per_cycle": 2.582537,
+      "added_draft_ms_per_cycle": 0.348472,
+      "beyond_one_ulp": 0,
+      "divergences": 33,
+      "passes": false,
+      "robust": false,
+      "lossless": true,
+      "wins": false
+    }
+  },
+  "b_dec_not_slower_than_floor": true,
+  "stage_profile": {
+    "dec_d4v4": {
+      "cycles": 3417,
+      "stages_per_cycle_histogram": {
+        "1": 3417
+      },
+      "mean_stages_per_cycle": 1.0,
+      "second_stage_rate": 0.0,
+      "verify_tokens_per_committed_token": 1.6478587962962963,
+      "mean_unused_draft_tokens": 0.0,
+      "mean_rejected_draft_tokens": 1.9306409130816506,
+      "mean_cycle_ms": 49.80551088674276,
+      "sd_cycle_ms": 0.7693282607859752
+    },
+    "staged_d8v4": {
+      "cycles": 3309,
+      "stages_per_cycle_histogram": {
+        "1": 3111,
+        "2": 198
+      },
+      "mean_stages_per_cycle": 1.059836808703536,
+      "second_stage_rate": 0.05983680870353581,
+      "verify_tokens_per_committed_token": 1.6721643518518519,
+      "mean_unused_draft_tokens": 3.760652765185857,
+      "mean_rejected_draft_tokens": 2.0770625566636447,
+      "mean_cycle_ms": 52.402671894832274,
+      "sd_cycle_ms": 5.5911160984432735
+    },
+    "staged_d8v2": {
+      "cycles": 3309,
+      "stages_per_cycle_histogram": {
+        "1": 2295,
+        "2": 924,
+        "3": 90
+      },
+      "mean_stages_per_cycle": 1.3336355394378967,
+      "second_stage_rate": 0.30643699002719854,
+      "verify_tokens_per_committed_token": 1.2769097222222223,
+      "mean_unused_draft_tokens": 4.99909338168631,
+      "mean_rejected_draft_tokens": 0.8495013599274706,
+      "mean_cycle_ms": 56.25764330613478,
+      "sd_cycle_ms": 11.745301914970009
+    },
+    "staged_d6v4": {
+      "cycles": 3345,
+      "stages_per_cycle_histogram": {
+        "1": 3120,
+        "2": 225
+      },
+      "mean_stages_per_cycle": 1.0672645739910314,
+      "second_stage_rate": 0.06726457399103139,
+      "verify_tokens_per_committed_token": 1.6565393518518519,
+      "mean_unused_draft_tokens": 1.8654708520179373,
+      "mean_rejected_draft_tokens": 2.0,
+      "mean_cycle_ms": 51.670080089686095,
+      "sd_cycle_ms": 5.45735656821083
+    },
+    "staged_d6v3": {
+      "cycles": 3345,
+      "stages_per_cycle_histogram": {
+        "1": 2871,
+        "2": 474
+      },
+      "mean_stages_per_cycle": 1.1417040358744395,
+      "second_stage_rate": 0.14170403587443947,
+      "verify_tokens_per_committed_token": 1.427662037037037,
+      "mean_unused_draft_tokens": 2.574887892376682,
+      "mean_rejected_draft_tokens": 1.2968609865470853,
+      "mean_cycle_ms": 52.30182801195815,
+      "sd_cycle_ms": 7.817911175174622
+    }
+  },
+  "verdict": {
+    "verdict": "VERIFY COST DOMINATES",
+    "rule": 3,
+    "arms": [
+      "staged_d8v4",
+      "staged_d8v2",
+      "staged_d6v4",
+      "staged_d6v3"
+    ]
+  }
+}
